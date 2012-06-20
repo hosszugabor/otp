@@ -40,7 +40,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/$(APPLICATION)-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = \
-	ftpd
+	ftpd \
+	ftpd_sup \
+	ftpd_listener
 
 HRL_FILES =
 

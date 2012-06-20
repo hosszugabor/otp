@@ -1,4 +1,4 @@
--module(listener).
+-module(ftpd_listener).
 
 -export([start_link/1]).
 -export([new_connection/1]).
@@ -6,14 +6,11 @@
 start_link(Args) ->
 	% erlang:register(listener_mod,self()),
 	proc_lib:init_ack({ok, self()}),
-    Port = Args, %% should be proplist TODO
+    Port = proplists:get_value(port,Args), %% should be proplist TODO
     {ok, LSock} = gen_tcp:listen(Port, [binary, {packet, 0}, 
                                         {active, false}]),
-  %  loop()
+
     loop(LSock)
-.
-loop() ->
-	loop()
 .
 
 loop(LSock) ->
@@ -24,6 +21,7 @@ loop(LSock) ->
 .
 
 new_connection([ Sock | _ ]) ->
+	erlang:monitor(process,whereis(ftpd_sup)),
 	{ok, Data} = do_recv(Sock, []),
 	io:format("Data: ~p \n",[Data])
 .

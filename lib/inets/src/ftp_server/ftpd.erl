@@ -48,12 +48,19 @@ start_standalone(_) ->
     {error, not_implemented_yet}.
 
 -spec start_service(Config :: ftp_config()) -> {ok, pid()} | {error, Reason :: term()}.
-start_service(_) ->
-    {error, not_implemented_yet}.
+start_service(Config) ->
+    ftpd_sup:start_link(Config).
+
 
 -spec stop_service(Pid :: pid()) -> ok | {error, Reason :: term()}.
-stop_service(_) ->
-    {error, not_implemented_yet}.
+stop_service(Pid) when is_pid(Pid) ->
+   case ftpd_sup:stop(Pid) of
+   	true -> ok;
+	R -> { error, R }
+   end;
+
+stop_service(Pid) ->
+	{error, not_a_pid}.
 
 -spec services() -> [{ftpd, pid()}].
 services() ->
