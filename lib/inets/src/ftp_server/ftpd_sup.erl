@@ -14,8 +14,8 @@ stop(Pid) ->
 .
 
 init(Args) ->
-    erlang:register(ftpd_sup,self()),
+    NewArgs = [ {sup_pid, self()} | Args],
 	    {ok, {{one_for_one, 10, 60},
-          [{ftpd_listener, {ftpd_listener, start_link, [Args]},
+          [{ftpd_listener, {ftpd_listener, start_link, [NewArgs]},
             permanent, brutal_kill, worker, [ftpd_listener]}]}}
 .
