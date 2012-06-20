@@ -28,7 +28,11 @@
 -export([init_per_testcase/2, end_per_testcase/2,
 	 init_per_suite/1, end_per_suite/1]).
 
--export([start_stop_test/1,connect_test/1]).
+-export([start_stop_test/1,
+	 connect_test/1,
+     	 login_success_test/1,
+     	 login_failure_test/1
+	]).
 
 %%--------------------------------------------------------------------
 %% all(Arg) -> [Doc] | [Case] | {skip, Comment}
@@ -43,7 +47,7 @@
 suite() -> [{ct_hooks,[ts_install_cth]}].
 
 all() ->
-    [start_stop_test,connect_test].
+    [start_stop_test,connect_test, login_success_test, login_failure_test].
 
 groups() ->
     [].
@@ -56,10 +60,10 @@ end_per_suite(Config) ->
     inets:stop(),
     Config.
 
-init_per_group(_GroupName, Config) ->
+init_per_group(_Group, Config) ->
     Config.
 
-end_per_group(_GroupName, Config) ->
+end_per_group(_Group, Config) ->
     Config.
 
 init_per_testcase(_Case, Config) ->
@@ -82,6 +86,33 @@ connect_test(suite) ->
 	[];
 connect_test(_Config) ->
     {ok, Pid} = inets:start(ftpd, [{port, 2021}]),
-	{ok, Ftp} = ftp:open("localhost", [{port,2021}]),
-	ok = ftp:close(Ftp),
-    inets:stop(ftpd, Pid).	
+    {ok, Ftp} = ftp:open("localhost", [{port,2021}]),
+    ok = ftp:close(Ftp),
+    inets:stop(ftpd, Pid).
+
+pwdfun("test", "test") -> authorized;
+pwdfun(_, _) -> not_authorized.
+
+login_success_test(doc) ->
+    ["Test that a user can login to the FTP server"];
+login_success_test(suite) ->
+    [];
+login_success_test(_Config) ->
+    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
+    {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
+    ok = ftp:user(Ftp, "test", "test"),
+    ftp:close(Ftp),
+    inets:stop(ftpd, Pid).
+
+login_failure_test(doc) ->
+    ["Test that a user can not login to the FTP server with wrong password"];
+login_failure_test(suite) ->
+    [];
+login_failure_test(_Config) ->
+    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
+    {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
+    {error, euser} = ftp:user(Ftp, "test", "test2"),
+    ftp:close(Ftp),
+    inets:stop(ftpd, Pid).
+
+
