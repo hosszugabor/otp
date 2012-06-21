@@ -28,7 +28,7 @@
 -export([init_per_testcase/2, end_per_testcase/2,
 	 init_per_suite/1, end_per_suite/1]).
 
--export([start_stop_test/1]).
+-export([start_stop_test/1,connect_test/1]).
 
 %%--------------------------------------------------------------------
 %% all(Arg) -> [Doc] | [Case] | {skip, Comment}
@@ -43,7 +43,7 @@
 suite() -> [{ct_hooks,[ts_install_cth]}].
 
 all() ->
-    [start_stop_test].
+    [start_stop_test,connect_test].
 
 groups() ->
     [].
@@ -76,3 +76,12 @@ start_stop_test(_Config) ->
     {ok, Pid} = inets:start(ftpd, [{port, 2021}]),
     inets:stop(ftpd, Pid).
 
+connect_test(doc) ->
+    ["Test that we can connect to the ftp server"];
+connect_test(suite) ->
+	[];
+connect_test(_Config) ->
+    {ok, Pid} = inets:start(ftpd, [{port, 2021}]),
+	{ok, Ftp} = ftp:open("localhost", [{port,2021}]),
+	ok = ftp:close(Ftp),
+    inets:stop(ftpd, Pid).	
