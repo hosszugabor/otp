@@ -3,45 +3,44 @@
 -export([start_link/1]).
 -export([new_connection/2,loop/2]).
 
+-include_lib("inets/src/ftp/ftp_internal.hrl").
+
 start_link(Args) ->
-	% erlang:register(listener_mod,self()),
 	proc_lib:init_ack({ok, self()}),
-  %  process_flag(trap_exit, true),
     Port = proplists:get_value(port,Args),
     SupPid = proplists:get_value(sup_pid,Args),
     {ok, LSock} = gen_tcp:listen(Port, [binary, {packet, 0}, 
                                         {active, false}]),
-%	loop(LSock,SupPid)
-    ListenerPid = spawn_link(ftpd_listener,loop,[LSock, SupPid]),
-	l(LSock,ListenerPid)
+    spawn_link(ftpd_listener,loop,[LSock, SupPid]),
+    mainloop(LSock)
 .
 
-l(LSock,ListenerPid) ->
+mainloop(LSock) ->
     receive
-		{'EXIT',FromPid,Reason} -> exit(ListenerPid,shutdown), gen_tcp:close(LSock), exit(self(),shutdown)
+		{'EXIT',Pid,shutdown} -> gen_tcp:close(LSock)
 	end,
-	l(LSock,ListenerPid)
+	mainloop(LSock)
 .
 
 loop(LSock, SupPid) ->
-
-	{ok, Sock} = gen_tcp:accept(LSock),
-	%Args = [Sock],
-	spawn(ftpd_listener,new_connection,[Sock, SupPid]),
-	loop(LSock, SupPid)
+	case gen_tcp:accept(LSock) of
+		{ok, Sock} -> spawn(ftpd_listener,new_connection,[Sock, SupPid]),
+					  loop(LSock, SupPid);
+		{_, Res} -> ok
+	end
 .
 
 new_connection(Sock, SupPid) ->
 	erlang:monitor(process, SupPid),
 	gen_tcp:send(Sock,"220 abc \r\n"),
 	{ok, Data} = do_recv(Sock, []),
-	io:format("Data: ~p \n",[Data])
+	io:format("Data stream end: ~p \n",[Data])
 .
 
 do_recv(Sock, Bs) ->
     case gen_tcp:recv(Sock, 0) of
         {ok, B} ->
-			io:format("Dataaa: ~p \n",[B]),
+			io:format("Data recieved: ~p \n",[B]),
             do_recv(Sock, [ B | Bs ]);
         {error, closed} ->
             {ok, list_to_binary(Bs)}
