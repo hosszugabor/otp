@@ -49,15 +49,15 @@ start_standalone(_) ->
 
 -spec start_service(Config :: ftp_config()) -> {ok, pid()} | {error, Reason :: term()}.
 start_service(Config) ->
-    ftpd_sup:start_link(Config).
+    case ftpd_sup:start_link(Config) of
+	{ok, Pid} -> erlang:unlink(Pid), {ok, Pid};
+	R -> R
+    end.
 
 
 -spec stop_service(Pid :: pid()) -> ok | {error, Reason :: term()}.
 stop_service(Pid) when is_pid(Pid) ->
-   case ftpd_sup:stop(Pid) of
-   	true -> ok;
-	R -> { error, R }
-   end;
+   ftpd_sup:stop(Pid);
 
 stop_service(Pid) ->
 	{error, not_a_pid}.
