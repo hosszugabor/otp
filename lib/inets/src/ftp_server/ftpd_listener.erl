@@ -35,26 +35,15 @@ init(Args) ->
 handle_call(_Req, _From, State) -> {noreply, State}.
 handle_cast(_Req, State) -> {noreply, State}.
 
-terminate(shutdown, State) -> 
-	LSock = element(3, State),
-	gen_tcp:close(LSock),
-	io:write("ftpd_listener terminated correctly"),
-	ok;
-
-terminate({shutdown, Reason}, State) -> 
-	LSock = element(3, State),
-	gen_tcp:close(LSock),
-	io:write("terminate: 2, ~p/n"),
-	ok;
-
-terminate(Reason, State) -> 
-	io:write("terminate: 3, ~p/n"),
+%terminate(shutdown, State) removed, same body
+%terminate({shutdown, _Reason}, State)
+terminate(_Reason, State) -> 
+	io:write("terminate: 3/n"),
 	LSock = element(3, State),
 	gen_tcp:close(LSock),
 	ok.
 
-handle_info(Info, State) ->
-	io:write("Info: ~p/n"),
+handle_info(_Info, _State) ->
 	{stop, normal}.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
@@ -65,17 +54,26 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %% FTP control connection for handling commands
 %%
 
--type proplist()   :: list().
+-type proplist()   :: proplists:proplist().
 -type reply()      :: {reply, ReplyCode :: integer(), Message :: string()}.
 -type argschange() :: sameargs | {newargs, NewArgs :: proplist()}.
+-type connitem()   :: ftpd:ftp_option() |
+                      {username, User :: string()} |
+                      authed |
+                      {repr_type, Params :: list()}.
+-type connstate()  :: [connitem()].
+-type socket()     :: gen_tcp:socket().
 
 %% Wait for incoming messages
+-spec do_recv(Sock :: socket(), Args :: connstate()) -> ok.
 do_recv(Sock, Args) ->
+	io:format("sockname ~p\n", [inet:sockname(Sock)]),
+	io:format("peername ~p\n", [inet:peername(Sock)]),
     case gen_tcp:recv(Sock, 0) of
         {ok, Data} ->
 			DataStr        = binary_to_list(Data),
 			{Command, Msg} = packet_to_tokens(DataStr),
-			io:format("[Recv]: ~p - ~p\n", [Command, Msg]),
+			io:format("[~p-Recv]: ~p - ~p\n", [self(), Command, Msg]),
 
 			{Reply, MaybeNewArgs} = handle_message(Command, Msg, Args),
 			handle_reply(Sock, Reply),
@@ -87,18 +85,6 @@ do_recv(Sock, Args) ->
         {error, closed} -> ok
     end.
 
-%% Separate command from message and convert to upper case, eg. "user someone" -> {"USER", ["someone"]}
--spec packet_to_tokens(Data :: string()) -> {Command :: string(), [Message :: string()]}.
-packet_to_tokens(Data) ->
-	TrimmedData = string:strip(string:strip(Data, right, ?LF), right, ?CR),
-	case string:str(TrimmedData, " ") of
-		0   -> {string:to_upper(TrimmedData), ""};
-		Len ->
-			Command = string:to_upper(string:sub_string(TrimmedData, 1, Len - 1)),
-			Msg     = string:sub_string(TrimmedData, length(Command) + 2),
-    		{Command, string:tokens(Msg, " ")}
-	end.
-
 %% Send response if needed
 handle_reply(_, noreply) ->
 	ok;
@@ -107,7 +93,7 @@ handle_reply(Sock, {reply, Code, Message}) ->
 
 %% Convert Code and Message to 
 send_reply(Sock, Code, Message) ->
-	io:format("[Send]: ~p - ~p\n", [Code, Message]),
+	io:format("[~p-Send]: ~p - ~p\n", [self(), Code, Message]),
 	Str = integer_to_list(Code) ++ " " ++ Message ++ "\r\n",
 	gen_tcp:send(Sock, Str).
 
@@ -116,7 +102,7 @@ send_reply(Sock, Code, Message) ->
 response(ReplyCode, Message) -> {reply, ReplyCode, Message}.
 
 %% Handle incoming FTP commands
--spec handle_message(Command :: string(), Message :: list(), Args :: proplist()) -> {reply(), argschange()}.
+-spec handle_message(Command :: string(), Message :: list(), Args :: connstate()) -> {reply(), argschange()}.
 handle_message("NOOP", _, _) ->
 	{response(200, "NOOP command successful"), sameargs};
 
@@ -128,25 +114,53 @@ handle_message("USER", [User|_], Args) ->
     true -> 
       {response(503, "You are already logged in"), sameargs};
     false ->
-      NewArgs1 = proplists:delete(username, Args),
-      NewArgs2 = [ {username, User} | NewArgs1],
-      {response(331, "Password required for " ++ User), {newargs, NewArgs2}}
+      NewArgs = proplist_modify(username, User, Args),
+      {response(331, "Password required for " ++ User), {newargs, NewArgs}}
   end;
 
 handle_message("PASS", [Password|_], Args) ->
-	case {proplists:lookup(username, Args), proplists:get_value(pwd_fun, Args, fun(Uname,Pass) -> not_authorized end)} of
-		{{username, User}, PwdFun} ->
-			case PwdFun(User, Password) of
+	Authed = proplists:get_bool(authed, Args),
+	User   = proplists:lookup(username, Args),
+	case {Authed, User} of
+		{false, {username, UserName}} ->
+			PwdFun = proplists:get_value(pwd_fun, Args, fun(_U,_P) -> not_authorized end),
+			case PwdFun(UserName, Password) of
 				authorized     -> {response(230, "Login ok - TODO: not sure"), {newargs, [authed | Args]}                 };
 				not_authorized -> {response(530, "Login incorrect"),           {newargs, proplists:delete(username, Args)}}
 			end;
-		{none, _} ->
-			{response(503, "Login with USER first"), sameargs}
+		{false, none} -> {response(503, "Login with USER first"),     sameargs};
+		{true, _}     -> {response(503, "You are already logged in"), sameargs}
 	end;
 
-handle_message("TYPE", Type, Args) ->
-	NewArgs = [{repr_type, Type} | Args],
-	{response(200, "not yet"), {newargs, NewArgs}};
+handle_message("TYPE", Params, Args) ->
+	ParamsF = [ string:to_upper(E) || E <- Params],
+	case check_repr_type(ParamsF) of
+		true ->
+			NewArgs = proplist_modify(repr_type, ParamsF, Args),
+			{response(200, "TYPE set to " ++ hd(ParamsF)), {newargs, NewArgs}};
+		false ->
+			{response(500, "'TYPE " ++ string:join(Params, " ") ++ "' not understood"), sameargs}
+	end;
+
+handle_message("CWD", Params, Args) ->
+	NewDir = string:join(Params, " "),
+	CurDir = proplists:get_value(cwd, Args, "/"),
+	case true of
+		true ->
+			NewArgs = proplist_modify(cwd, CurDir ++ NewDir, Args),
+			{response(250, "CWD command successful."), {newargs, NewArgs}};
+		false ->
+			{response(550, NewDir ++ ": No such file or directory"), sameargs}
+	end;
+
+handle_message("PWD", [], Args) ->
+	{response(257, "\"" ++ proplists:get_value(cwd, Args, "/") ++ "\" is the current directory"), sameargs};
+
+handle_message("PWD", _, _) ->	% TODO: generalize
+	{response(501, "Invalid number of arguments"), sameargs};
+
+handle_message("PASV", _, _) ->
+	{response(500, "TODO"), sameargs};
 
 handle_message("", _, _) ->
 	{response(500, "Invalid command: try being more creative"), sameargs};
@@ -163,3 +177,30 @@ after_reply(Sock, _, Args) ->
 
 close_connection(Sock) ->
 	gen_tcp:close(Sock).
+
+%% MISC functions
+
+%% Separate command from message and convert to upper case, eg. "user someone" -> {"USER", ["someone"]}
+-spec packet_to_tokens(Data :: string()) -> {Command :: string(), [Message :: string()]}.
+packet_to_tokens(Data) ->
+	TrimmedData = string:strip(string:strip(Data, right, ?LF), right, ?CR),
+	case string:str(TrimmedData, " ") of
+		0   -> {string:to_upper(TrimmedData), ""};
+		Len ->
+			Command = string:to_upper(string:sub_string(TrimmedData, 1, Len - 1)),
+			Msg     = string:sub_string(TrimmedData, length(Command) + 2),
+    		{Command, string:tokens(Msg, " ")}
+	end.
+
+proplist_modify(Key, Value, PropList) ->
+	[{Key, Value} | proplists:delete(Key, PropList)].
+
+%%
+check_repr_type([Type]) ->
+	lists:member(Type, ["A", "E", "I"]);
+check_repr_type(["L", Arg]) ->
+	Arg == "8";
+check_repr_type([_, _]) ->
+	true;
+check_repr_type(_) ->
+	false.
