@@ -8,14 +8,11 @@ start_link(Args) ->
     supervisor:start_link(ftpd_sup, Args).
 
 stop(Pid) ->
- %   supervisor:terminate_child(Pid,listener),
-	exit(Pid,shutdown),
-	true
-.
+	exit(Pid,shutdown), %% TODO error reporting
+	ok.
 
 init(Args) ->
-    NewArgs = [ {sup_pid, self()} | Args],
-	    {ok, {{one_for_one, 10, 60},
+	NewArgs = [ {sup_pid, self()} | Args],
+	{ok, {{one_for_one, 1, 60},
           [{ftpd_listener, {ftpd_listener, start_link, [NewArgs]},
-            permanent, brutal_kill, worker, [ftpd_listener]}]}}
-.
+            permanent, 100000, worker, [ftpd_listener]}]}}.
