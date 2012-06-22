@@ -44,20 +44,17 @@
 -type ftp_config() 	:: [ftp_option()].
 
 -spec start_standalone(Config :: ftp_config()) -> {ok, pid()} | {error, Reason :: term()}.
-start_standalone(_) ->
-    {error, not_implemented_yet}.
+start_standalone(Config) ->
+	 ftpd_sup:start_link(Config, stand_alone).
 
 -spec start_service(Config :: ftp_config()) -> {ok, pid()} | {error, Reason :: term()}.
 start_service(Config) ->
-    case ftpd_sup:start_link(Config) of
-	{ok, Pid} -> erlang:unlink(Pid), {ok, Pid};
-	R -> R
-    end.
+	ftpd_sup:start_child(Config). 
 
 
 -spec stop_service(Pid :: pid()) -> ok | {error, Reason :: term()}.
 stop_service(Pid) when is_pid(Pid) ->
-   ftpd_sup:stop(Pid);
+	ftpd_sup:stop_child(Pid);
 
 stop_service(Pid) ->
 	{error, not_a_pid}.
