@@ -4,6 +4,8 @@
 
 -include_lib("inets/src/inets_app/inets_internal.hrl").
 
+-include_lib("ftpd_rep.hrl").
+
 %%
 %% FTP control connection for handling commands
 %%
@@ -28,9 +30,14 @@
 new_connection(Sock, SupPid, Args) ->
 	erlang:monitor(process, SupPid),
 	io:format("---------------- CONNECTION START ----------------\n"),
-	send_reply(Sock, 220, "hello"),
-	NewArgs = [{control_socket, Sock} | Args],
-	do_recv(Sock, NewArgs).
+	send_reply(Sock, 220, "Hello"),
+	ErlTop = element(2,file:get_cwd()),
+	ChRootDir = proplists:get_value(chrootdir, Args, ErlTop),
+	PwdFun = proplists:get_value(pwd_fun, Args, fun(_U,_P) -> not_authorized end), 
+	ConnData = #ctrl_conn_data{ control_socket 	= Sock, 
+								pwd_fun			= PwdFun,
+								chrootdir		= ChRootDir	 },
+	do_recv(Sock, ConnData).
 
 %% Control Connection - Wait for incoming messages
 -spec do_recv(Sock :: socket(), Args :: connstate()) -> ok.
@@ -70,26 +77,26 @@ handle_command("NOOP", _, _) ->
 handle_command("QUIT", _, _) ->
 	{response(221, "Goodbye."), sameargs};
 
-handle_command("USER", [User|_], Args) ->
-  case proplists:get_bool(authed,Args) of
+handle_command("USER", [User|_], Args ) ->
+  case Args#ctrl_conn_data.authed of
     true -> 
       {response(503, "You are already logged in"), sameargs};
     false ->
-      NewArgs = proplist_modify(username, User, Args),
+      NewArgs = Args#ctrl_conn_data{ username = User },
       {response(331, "Password required for " ++ User), {newargs, NewArgs}}
   end;
 
 handle_command("PASS", [Password|_], Args) ->
-	Authed = proplists:get_bool(authed, Args),
-	User   = proplists:lookup(username, Args),
+	Authed = Args#ctrl_conn_data.authed,
+	User   = Args#ctrl_conn_data.username,
 	case {Authed, User} of
-		{false, {username, UserName}} ->
-			PwdFun = proplists:get_value(pwd_fun, Args, fun(_U,_P) -> not_authorized end),
-			case PwdFun(UserName, Password) of
-				authorized     -> {response(230, "Login ok - TODO: not sure"), {newargs, [authed | Args]}                 };
-				not_authorized -> {response(530, "Login incorrect"),           {newargs, proplists:delete(username, Args)}}
-			end;
 		{false, none} -> {response(503, "Login with USER first"),     sameargs};
+		{false, _} ->
+			PwdFun = Args#ctrl_conn_data.pwd_fun,
+			case PwdFun(User, Password) of
+				authorized     -> {response(230, "Login ok - TODO: not sure"), {newargs, Args#ctrl_conn_data{ authed = true }}};
+				not_authorized -> {response(530, "Login incorrect"),           {newargs, Args#ctrl_conn_data{ username = none }}}
+			end;
 		{true, _}     -> {response(503, "You are already logged in"), sameargs}
 	end;
 
@@ -97,7 +104,7 @@ handle_command("TYPE", Params, Args) ->
 	ParamsF = [ string:to_upper(E) || E <- Params],
 	case check_repr_type(ParamsF) of
 		true ->
-			NewArgs = proplist_modify(repr_type, ParamsF, Args),
+			NewArgs = Args#ctrl_conn_data{ repr_type = ParamsF },
 			{response(200, "TYPE set to " ++ hd(ParamsF)), {newargs, NewArgs}};
 		false ->
 			{response(500, "'TYPE " ++ string:join(Params, " ") ++ "' not understood"), sameargs}
@@ -105,17 +112,17 @@ handle_command("TYPE", Params, Args) ->
 
 handle_command("CWD", Params, Args) ->
 	NewDir = string:join(Params, " "),
-	CurDir = proplists:get_value(curr_path, Args, "/"),
+	CurDir = Args#ctrl_conn_data.curr_path,
 	case true of
 		true ->
-			NewArgs = proplist_modify(curr_path, CurDir ++ NewDir, Args),
+			NewArgs = Args#ctrl_conn_data{ curr_path = (CurDir ++ NewDir) },
 			{response(250, "CWD command successful."), {newargs, NewArgs}};
 		false ->
 			{response(550, NewDir ++ ": No such file or directory"), sameargs}
 	end;
 
 handle_command("PWD", [], Args) ->
-	{response(257, "\"" ++ proplists:get_value(curr_path, Args, "/") ++ "\" is the current directory"), sameargs};
+	{response(257, "\"" ++ Args#ctrl_conn_data.curr_path ++ "\" is the current directory"), sameargs};
 
 handle_command("PWD", _, _) ->	% TODO: generalize
 	{response(501, "Invalid number of arguments"), sameargs};
@@ -125,7 +132,7 @@ handle_command("PASV", _, Args) ->
 	case inet:getaddr(Hostname, inet) of
 		{ok, Address} ->
 			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(),
-			NewArgs = proplist_modify(pasv_pid, PasvPid, Args),
+			NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
 			{response(227, "Entering Passive Mode (" ++ format_address(Address, Port) ++ ")."), {newargs, NewArgs}};
 		{error, Error} ->
 			io:format("ERROR: inet:getaddr, ~p", [Error]),
@@ -139,12 +146,12 @@ handle_command("PORT", _, _) ->
 	{response(501, "Illegal PORT command"), sameargs};
 
 handle_command("LIST", _, Args) ->
-	case proplists:lookup(pasv_pid, Args) of
-		{pasv_pid, PasvPid} ->
-			PasvPid ! {list, "drwxrwsr-x   3 47688    60000        4096 Dec  9  2005 mirror\r\n", Args},
-			{response(150, "Opening ASCII mode data connection for file list"), sameargs};
+	case Args#ctrl_conn_data.pasv_pid of
 		none ->
-			{response(500, "TODO: LIST fail"), sameargs}
+			{response(500, "TODO: LIST fail"), sameargs};
+		PasvPid ->
+			PasvPid ! {list, "drwxrwsr-x   3 47688    60000        4096 Dec  9  2005 mirror\r\n", Args},
+			{response(150, "Opening ASCII mode data connection for file list"), sameargs}
 	end;
 
 handle_command("", _, _) ->
@@ -225,7 +232,7 @@ check_repr_type(_) ->
 req_auth_messages() -> ["CWD", "PWD", "PASV"].
 
 check_auth(Command, Args) ->
-	case {lists:member(Command, req_auth_messages()), proplists:get_bool(authed, Args)} of
+	case {lists:member(Command, req_auth_messages()), Args#ctrl_conn_data.authed } of
 		{true, false} -> bad;
 		_             -> ok
 	end.
