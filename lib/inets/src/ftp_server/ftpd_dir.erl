@@ -3,8 +3,13 @@
 -export([set_cwd/3]).
 
 set_cwd(Root, Cwd, Req) ->
-	NewReq = dot_correct(Req),
-	cwd_fun(Root, Cwd, NewReq).
+	case lists:prefix("./", Req) of
+		true -> 
+			NewReq = dot_correct(lists:nthtail(2, Req)),
+			cwd_fun(Root, Cwd, NewReq);
+		false ->
+			NewReq = dot_correct(Req),
+			cwd_fun(Root, Cwd, NewReq).
 
 dot_correct(Cwd) ->
 	case string:str(Cwd, "/./") of
