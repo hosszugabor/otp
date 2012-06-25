@@ -2,6 +2,8 @@
 
 -export([set_cwd/3]).
 
+%% TODO: abs/rel path support, collects slashes
+
 set_cwd(Root, Cwd, Req) ->
 	case lists:prefix("./", Req) of
 		true -> 
@@ -9,7 +11,8 @@ set_cwd(Root, Cwd, Req) ->
 			cwd_fun(Root, Cwd, NewReq);
 		false ->
 			NewReq = dot_correct(Req),
-			cwd_fun(Root, Cwd, NewReq).
+			cwd_fun(Root, Cwd, NewReq)
+	end.
 
 dot_correct(Cwd) ->
 	case string:str(Cwd, "/./") of

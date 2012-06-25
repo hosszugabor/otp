@@ -113,11 +113,14 @@ handle_command("TYPE", Params, Args) ->
 handle_command("CWD", Params, Args) ->
 	NewDir = string:join(Params, " "),
 	CurDir = Args#ctrl_conn_data.curr_path,
-	case true of
-		true ->
-			NewArgs = Args#ctrl_conn_data{ curr_path = (CurDir ++ NewDir) },
+	BaseDir = Args#ctrl_conn_data.chrootdir,
+	case ftpd_dir:set_cwd(BaseDir, CurDir, NewDir) of
+		{ok, NewPath} ->
+			io:format("CWD new path: ~p", [NewPath]),
+			NewArgs = Args#ctrl_conn_data{ curr_path = NewPath },
 			{response(250, "CWD command successful."), {newargs, NewArgs}};
-		false ->
+		{error, Error} ->
+			io:format("CWD error: ~p", [Error]),
 			{response(550, NewDir ++ ": No such file or directory"), sameargs}
 	end;
 
