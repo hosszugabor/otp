@@ -52,14 +52,15 @@
 %%--------------------------------------------------------------------
 suite() -> [].
 
-all() ->
-    [start_stop_test, connect_test, 
+all() -> [
+	{group, basic_tests}, 
 	{group, login_tests}, 
 	{group, directory_tests},
     	{group, download_upload_tests}].
 
 groups() ->
-    [{login_tests, [], [login_success_test, login_failure_test]},
+    [{basic_tests, [], [start_stop_test, connect_test]},
+     {login_tests, [], [login_success_test, login_failure_test]},
      {directory_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test]},
      {download_upload_tests, [], [download_test, upload_test]}
     ].
@@ -72,26 +73,18 @@ end_per_suite(Config) ->
     inets:stop(),
     Config.
 
-init_per_group(login_tests, Config) ->
-    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
-    [{ftpd_pid, Pid} | Config];
-
-init_per_group(Group, Config) when Group =:= directory_tests;
-				   Group =:= download_upload_tests -> 
+init_per_group(basic_tests, Config) ->
+    Config;
+init_per_group(_Group, Config) -> 
     DataDir = ?config(data_dir, Config),
     {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}, {chrootDir, DataDir}]),
-    [{ftpd_pid, Pid} | Config];
+    [{ftpd_pid, Pid} | Config].
 
-init_per_group(_Group, Config) ->
-    Config.
-
+end_per_group(basic_tests, Config) ->
+    Config;
 end_per_group(_Group, Config) ->
-    case ?config(ftpd_pid, Config) of
-	undefined ->
-	    ok;
-	Pid ->
-	    inets:stop(ftpd, Pid)
-    end.
+    Pid = ?config(ftpd_pid, Config),
+    inets:stop(ftpd, Pid).
 
 init_per_testcase(start_stop_test, Config) ->
     Config;
