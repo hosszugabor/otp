@@ -31,7 +31,9 @@
 -export([start_stop_test/1,
 	 connect_test/1,
      	 login_success_test/1,
-     	 login_failure_test/1
+     	 login_failure_test/1,
+	 ls_test/1,
+	 cd_test/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -44,10 +46,10 @@
 %% Description: Returns documentation/test cases in this test suite
 %%		or a skip tuple if the platform is not supported.  
 %%--------------------------------------------------------------------
-suite() -> [{ct_hooks,[ts_install_cth]}].
+suite() -> [].
 
 all() ->
-    [start_stop_test,connect_test, login_success_test, login_failure_test].
+    [start_stop_test,connect_test, login_success_test, login_failure_test, ls_test, cd_test].
 
 groups() ->
     [].
@@ -115,4 +117,30 @@ login_failure_test(_Config) ->
     ftp:close(Ftp),
     inets:stop(ftpd, Pid).
 
+ls_test(doc) ->
+    ["Test that the user can list a directory"];
+ls_test(suite) ->
+    [];
+ls_test(_Config) ->
+    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
+    {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
+    ok = ftp:user(Ftp, "test", "test"),
+    {ok, _Ls} = ftp:ls(Ftp),
+    {ok, _Ls2} = ftp:ls(Ftp, "/etc"),
+    ftp:close(Ftp),
+    inets:stop(ftpd, Pid).
+
+cd_test(doc) ->
+    ["Test that the user can change a directory"];
+cd_test(suite) ->
+    [];
+cd_test(_Config) ->
+    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
+    {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
+    ok = ftp:user(Ftp, "test", "test"),
+    {ok, _Ls} = ftp:ls(Ftp, "etc"),
+    ok = ftp:cd(Ftp, "etc"),
+    {ok, _Ls2} = ftp:ls(Ftp),
+    ftp:close(Ftp),
+    inets:stop(ftpd, Pid).
 
