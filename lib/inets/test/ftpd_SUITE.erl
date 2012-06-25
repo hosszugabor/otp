@@ -35,7 +35,9 @@
 	 ls_test/1,
 	 ls_dir_test/1,
 	 ls_empty_dir_test/1,
-	 cd_test/1
+	 cd_test/1,
+	 download_test/1,
+	 upload_test/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -51,11 +53,15 @@
 suite() -> [].
 
 all() ->
-    [start_stop_test,connect_test, {group, login_tests}, ls_test, ls_dir_test, cd_test].
+    [start_stop_test, connect_test, 
+	{group, login_tests}, 
+	{group, directory_tests},
+    	{group, download_upload_tests}].
 
 groups() ->
     [{login_tests, [], [login_success_test, login_failure_test]},
-     {directory_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test]}
+     {directory_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test]},
+     {download_upload_tests, [], [download_test, upload_test]}
     ].
 
 init_per_suite(Config) ->
@@ -70,23 +76,16 @@ init_per_group(login_tests, Config) ->
     {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
     [{ftpd_pid, Pid} | Config];
 
-init_per_group(directory_tests, Config) ->
+init_per_group(Group, Config) when Group =:= directory_tests;
+				   Group =:= download_upload_tests -> 
     DataDir = ?config(data_dir, Config),
     {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}, {chrootDir, DataDir}]),
-    {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
-    ok = ftp:user(Ftp, "test", "test"),
-    [{ftpd_pid, Pid}, {ftp_pid, Ftp} | Config];
+    [{ftpd_pid, Pid} | Config];
 
 init_per_group(_Group, Config) ->
     Config.
 
 end_per_group(_Group, Config) ->
-    case ?config(ftp_pid, Config) of
-	undefined ->
-	    ok;
-	Ftp ->
-	    ftp:close(Ftp)
-    end,
     case ?config(ftpd_pid, Config) of
 	undefined ->
 	    ok;
@@ -94,11 +93,39 @@ end_per_group(_Group, Config) ->
 	    inets:stop(ftpd, Pid)
     end.
 
+init_per_testcase(start_stop_test, Config) ->
+    Config;
+init_per_testcase(connect_test, Config) ->
+    Config;
+
+init_per_testcase(upload_test, Config0) ->
+    Config = ftp_connect(Config0),
+    PrivDir = ?config(priv_dir, Config),
+    EmptyFileName = "empty_upload",
+    DataFileName = "data_upload",
+    ok = file:write_file(filename:join(PrivDir, EmptyFileName), <<>>),
+    ok = file:write_file(filename:join(PrivDir, DataFileName), <<"ABC">>),
+    [{empty_file_name, EmptyFileName}, {data_file_name, DataFileName}| Config];
+
 init_per_testcase(_Case, Config) ->
-    Config.
+    ftp_connect(Config).
+
+end_per_testcase(start_stop_test, Config) ->
+    Config;
+end_per_testcase(connect_test, Config) ->
+    Config;
+
+end_per_testcase(upload_test, Config) ->
+    % Remove the uploaded files
+    DataDir = ?config(data_dir, Config),
+    EmptyFileName = ?config(empty_file_name, Config),
+    DataFileName = ?config(data_file_name, Config),
+    file:delete(filename:join(DataDir, EmptyFileName)),
+    file:delete(filename:join(DataDir, DataFileName)),
+    ftp_close(Config);
 
 end_per_testcase(_Case, Config) ->
-    Config.
+    ftp_close(Config).
 
 start_stop_test(doc) ->
     ["Test that the FTP server starts at all"];
@@ -181,4 +208,42 @@ cd_test(Config) ->
     [_]=re:split(LsDir, "\\r\\n", [trim]),
     ok = ftp:cd(Ftp, ".."),
     ls_test(Config).
+
+download_test(doc) ->
+    ["Test that the user can download files."];
+download_test(suite) ->
+    [];
+download_test(Config) ->
+    Ftp = ?config(ftp_pid, Config),
+    PrivDir = ?config(priv_dir, Config),
+    ftp:lcd(Ftp, PrivDir),
+    ok = ftp:recv(Ftp, "empty"),
+    ok = ftp:recv(Ftp, "dir/123"),
+    {ok, <<>>} = file:read_file(filename:join(PrivDir, "empty")),
+    {ok, <<"abc">>} = file:read_file(filename:join(PrivDir, "123")).
+
+upload_test(doc) ->
+    ["Test that the user can upload files."];
+upload_test(suite) ->
+    [];
+upload_test(Config) ->
+    Ftp = ?config(ftp_pid, Config),
+    PrivDir = ?config(priv_dir, Config),
+    DataDir = ?config(data_dir, Config),
+    EmptyFileName = ?config(empty_file_name, Config),
+    DataFileName = ?config(data_file_name, Config),
+    ftp:lcd(Ftp, PrivDir),
+    ok = ftp:send(Ftp, filename:join(PrivDir, EmptyFileName)),
+    ok = ftp:send(Ftp, filename:join(PrivDir, DataFileName)),
+    {ok, <<>>} = file:read_file(filename:join(DataDir, EmptyFileName)),
+    {ok, <<"ABC">>} = file:read_file(filename:join(DataDir, DataFileName)).
+
+ftp_connect(Config) ->
+    {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
+    ok = ftp:user(Ftp, "test", "test"),
+    [{ftp_pid, Ftp} | Config].
+
+ftp_close(Config) ->
+    Ftp = ?config(ftp_pid, Config),
+    ftp:close(Ftp).
 
