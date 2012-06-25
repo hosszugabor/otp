@@ -2,6 +2,8 @@
 
 -export([start_passive_mode/0, pasv_accept/1]).
 
+-include_lib("ftpd_rep.hrl").
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Passive mode
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -25,9 +27,9 @@ pasv_send_loop(Sock) ->
 		{list, Msg, Args} ->
 			io:format("PASV send LIST data\n"),
 			send_stream(Sock, Msg),
-			case proplists:lookup(control_socket, Args) of
-				{control_socket, ControlSock} -> send_reply(ControlSock, 226, "Transfer complete");
-				none -> io:format("PASV control socket lookup fail\n")
+			case Args#ctrl_conn_data.control_socket of
+				none -> io:format("PASV control socket lookup fail\n");
+				ControlSock -> send_reply(ControlSock, 226, "Transfer complete")
 			end
 	end,
 	gen_tcp:close(Sock).
