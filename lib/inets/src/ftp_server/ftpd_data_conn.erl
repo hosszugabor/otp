@@ -26,9 +26,11 @@ pasv_send_loop(Sock) ->
     receive
 		{list, Msg, Args} ->
 			io:format("PASV send LIST data\n"),
-			send_stream(Sock, Msg),
+			TempMsg = [ "drwxrwsr-x   3 47688    60000        4096 Dec  9  2005 " ++ A || A <- Msg],
+			FormattedMsg = string:join(TempMsg, "\r\n") ++ "\r\n",
+			send_stream(Sock, FormattedMsg),
 			case Args#ctrl_conn_data.control_socket of
-				none -> io:format("PASV control socket lookup fail\n");
+				none 		-> io:format("PASV control socket lookup fail\n");
 				ControlSock -> send_reply(ControlSock, 226, "Transfer complete")
 			end
 	end,

@@ -148,13 +148,25 @@ handle_command("PORT", [_Address], _) ->
 handle_command("PORT", _, _) ->
 	{response(501, "Illegal PORT command"), sameargs};
 
-handle_command("LIST", _, Args) ->
+handle_command("LIST", Params, Args) ->
 	case Args#ctrl_conn_data.pasv_pid of
 		none ->
 			{response(500, "TODO: LIST fail"), sameargs};
 		PasvPid ->
-			PasvPid ! {list, "drwxrwsr-x   3 47688    60000        4096 Dec  9  2005 mirror\r\n", Args},
-			{response(150, "Opening ASCII mode data connection for file list"), sameargs}
+			DirToList = string:join(Params, " ") ++ "/",
+			AbsPath = Args#ctrl_conn_data.chrootdir,
+			RelPath = Args#ctrl_conn_data.curr_path,
+			case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
+				{ok, NewPath} ->
+					FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
+					io:format("LIST path: ~p", [FullPath]),
+					{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
+					PasvPid ! {list, FileNames, Args},
+					{response(150, "Opening ASCII mode data connection for file list"), sameargs};
+				{error, Error} ->
+					io:format("LIST error: ~p", [Error]),
+					{response(550, "LIST fail TEMP TODO"), sameargs}
+			end
 	end;
 
 handle_command("", _, _) ->
