@@ -49,10 +49,10 @@
 suite() -> [].
 
 all() ->
-    [start_stop_test,connect_test, login_success_test, login_failure_test, ls_test, cd_test].
+    [start_stop_test,connect_test, {group, login_tests}, ls_test, cd_test].
 
 groups() ->
-    [].
+    [{login_tests, [], [login_success_test, login_failure_test]}].
 
 init_per_suite(Config) ->
     ok = inets:start(),
@@ -62,11 +62,13 @@ end_per_suite(Config) ->
     inets:stop(),
     Config.
 
-init_per_group(_Group, Config) ->
-    Config.
+init_per_group(login_tests, Config) ->
+    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
+    [{ftpd_pid, Pid} | Config].
 
-end_per_group(_Group, Config) ->
-    Config.
+end_per_group(login_tests, Config) ->
+    Pid = ?config(ftpd_pid, Config),
+    inets:stop(ftpd, Pid).
 
 init_per_testcase(_Case, Config) ->
     Config.
@@ -100,22 +102,18 @@ login_success_test(doc) ->
 login_success_test(suite) ->
     [];
 login_success_test(_Config) ->
-    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
     {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
     ok = ftp:user(Ftp, "test", "test"),
-    ftp:close(Ftp),
-    inets:stop(ftpd, Pid).
+    ftp:close(Ftp).
 
 login_failure_test(doc) ->
     ["Test that a user can not login to the FTP server with wrong password"];
 login_failure_test(suite) ->
     [];
 login_failure_test(_Config) ->
-    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
     {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
     {error, euser} = ftp:user(Ftp, "test", "test2"),
-    ftp:close(Ftp),
-    inets:stop(ftpd, Pid).
+    ftp:close(Ftp).
 
 ls_test(doc) ->
     ["Test that the user can list a directory"];
