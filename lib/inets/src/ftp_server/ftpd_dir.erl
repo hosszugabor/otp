@@ -3,27 +3,49 @@
 -export([set_cwd/3]).
 
 set_cwd(Root, Cwd, Req) ->
-	case lists:prefix("./", Req) of
+	case lists:prefix("./", Req)  of
 		true -> 
-			NewReq = dot_correct(lists:nthtail(2, Req)),
+			NewReq = slash_correct(dot_correct(lists:nthtail(1, Req))),
 			cwd_fun(Root, Cwd, NewReq);
 		false ->
-			NewReq = dot_correct(Req),
-			cwd_fun(Root, Cwd, NewReq).
+			case lists:prefix("/", Req) of 
+				false -> 
+					NewReq = slash_correct(dot_correct(lists:append("/", Req))),
+					cwd_fun(Root, Cwd, NewReq);
+				true -> 
+					NewReq = slash_correct(dot_correct(Req)),
+					cwd_fun(Root, Root, NewReq)
+			end			
+	end.
+
+slash_correct(Cwd) ->
+	case string:str(Cwd, "//") of
+		0 -> Cwd;
+		Index -> 
+			Head = lists:sublist(Cwd, Index),
+			Tail = lists:nthtail(Index+2, Cwd),
+			slash_correct(lists:append(Head, Tail))
+	end.
 
 dot_correct(Cwd) ->
 	case string:str(Cwd, "/./") of
 		0 -> Cwd;
 		Index -> 
-			Head = lists:sublist(Cwd, Index-1),
+			Head = lists:sublist(Cwd, Index),
 			Tail = lists:nthtail(Index+2, Cwd),
-			dot_correct(lists:append([Head, "/", Tail]))
+			dot_correct(lists:append(Head, Tail))
 	end.
 
 cwd_fun(_Root, CwdAbsName, "") ->
-	{ok, CwdAbsName};
+	
+	NewAbsName = case lists:suffix("/", CwdAbsName) of
+		true -> lists:sublist(CwdAbsName, length(CwdAbsName)-1);
+		false -> CwdAbsName
+	end,
+	{ok, slash_correct(NewAbsName)};
 
 cwd_fun(Root, CwdAbsName, Req) ->
+	io:format("~p\n", [Req]),
 	{Index, Acc, NewReq} = cdd_fun(Req, 0),
 	NewCwd = step_back(CwdAbsName, Acc),
 	case step_forward(Root, NewCwd, Index, NewReq) of
