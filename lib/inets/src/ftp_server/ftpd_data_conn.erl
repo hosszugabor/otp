@@ -85,6 +85,6 @@ get_file_info(FName,FullPath) ->
 		_ -> '---'
 	end,
 	lists:concat([TypeLetter,AccLetter,AccLetter,AccLetter,
-	" ", Links, " ", UID, " ", GID, " ", Size, " ", CDa, "-",
-	CMn, "-", CYr, " ", FName])
+	" ", Links, " ", UID, " ", GID, " ", Size, " ", CDa, " ",
+	CMn, " ", CYr, " ", CH, ":", CMin, " ", FName])
 .

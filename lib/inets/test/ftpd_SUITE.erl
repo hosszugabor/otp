@@ -193,12 +193,10 @@ ls_test(Config) ->
     Ftp = ?config(ftp_pid, Config),
     {ok, LsRoot} = ftp:ls(Ftp),
     Lst=re:split(LsRoot, "\\r\\n", [trim]),
-	io:write("\n\n"),
-	io:write(Lst),
-	io:write("\n\n"),
 	[Dir, Empty, EmptyDir] = Lst,
     match = re:run(Dir, "^d.*\sdir$", [{capture, none}]),
-    match = re:run(Empty, "^-.*\s0\s+\S+\s+\S+\s+\d+:\d+empty$", [{capture, none}]),
+    match = re:run(Empty, "^-.*\s\0\s+\S+\s+\S+\s+\S+\s+\d+:\d+\s+empty$", [{capture, none}]),
+	io:write(Empty),
     match = re:run(EmptyDir, "^d.*\sempty_dir$", [{capture, none}]).
 
 ls_dir_test(doc) ->
