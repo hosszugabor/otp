@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <unistd.h>
 
 static int load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info) {
     return 0;
@@ -46,9 +47,23 @@ static ERL_NIF_TERM get_fd_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     return enif_make_tuple2(env, ok, result);
 }
 
+static ERL_NIF_TERM close_fd_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    int sock;
+
+    if (argc!=1) {
+        return enif_make_badarg(env);
+    }
+    if (!enif_get_int(env, argv[0], &sock)) {
+        return enif_make_badarg(env);
+    }
+    close(sock);
+    return enif_make_atom(env, "ok");
+}
 
 static ErlNifFunc nif_funcs[] = {
-    {"get_fd", 0, get_fd_nif}
+    {"get_fd", 0, get_fd_nif},
+    {"close_fd", 1, close_fd_nif}
 };
 
 ERL_NIF_INIT(fd_nif, nif_funcs, load, reload, upgrade, unload)

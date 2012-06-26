@@ -22,12 +22,15 @@
 
 -on_load(init/0).
 
--export([get_fd/0]).
+-export([get_fd/0, close_fd/1]).
 
 init() ->
     RootDir = os:getenv("ERL_TOP"),
     ok = erlang:load_nif(filename:join([RootDir, "lib", "inets", "test", "c_src", "fd_nif"]), 0).
 
 get_fd() ->
+    erlang:nif_error(nif_library_not_loaded).
+
+close_fd(_FD) ->
     erlang:nif_error(nif_library_not_loaded).
 
