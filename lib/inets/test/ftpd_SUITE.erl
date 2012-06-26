@@ -290,9 +290,9 @@ download_test(Config) ->
     PrivDir = ?config(priv_dir, Config),
     ftp:lcd(Ftp, PrivDir),
     ok = ftp:recv(Ftp, "empty"),
-    ok = ftp:recv(Ftp, "dir/123"),
+    ok = ftp:recv(Ftp, "dir/123", "123"),
     {ok, <<>>} = file:read_file(filename:join(PrivDir, "empty")),
-    {ok, <<"abc">>} = file:read_file(filename:join(PrivDir, "123")).
+    {ok, <<"abc\n">>} = file:read_file(filename:join(PrivDir, "123")).
 
 upload_test(doc) ->
     ["Test that the user can upload files."];

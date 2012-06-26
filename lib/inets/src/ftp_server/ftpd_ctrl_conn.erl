@@ -1,6 +1,7 @@
 -module(ftpd_ctrl_conn).
 
 -export([new_connection/3]).
+-export([response/2]).
 
 -include_lib("inets/src/inets_app/inets_internal.hrl").
 
@@ -113,6 +114,11 @@ handle_command(<<"TYPE">>, ParamsBin, Args) ->
 			{response(500, "'TYPE " ++ string:join(Params, " ") ++ "' not understood"), sameargs}
 	end;
 
+handle_command(<<"RETR">>, ParamsBin, Args) ->
+	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
+	FileName = string:join(Params, " "),
+	ftpd_data_conn:send_msg(retr, FileName, Args);
+
 handle_command(<<"CWD">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
 	NewDir = string:join(Params, " "),
@@ -161,27 +167,21 @@ handle_command(<<"PORT">>, [_Address], _) ->
 handle_command(<<"PORT">>, _, _) ->
 	{response(501, "Illegal PORT command"), sameargs};
 
-handle_command(<<"LIST">>, ParamsBin, Args) ->
+handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
-	case Args#ctrl_conn_data.pasv_pid of
-		none ->
-			{response(500, "TODO: LIST fail"), sameargs};
-		PasvPid ->
-			DirToList = string:join(Params, " "),
-			AbsPath = Args#ctrl_conn_data.chrootdir,
-			RelPath = Args#ctrl_conn_data.curr_path,
-			case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
-				{ok, NewPath} ->
-					FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
-					io:format("LIST path: ~p\n", [FullPath]),
-					{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-					ftpd_data_conn:send_msg(PasvPid,list, {lists:sort(FileNames), 
-															FullPath},	 Args),
-					{response(150, "Opening ASCII mode data connection for file list"), sameargs};
-				{error, Error} ->
-					io:format("LIST error: ~p  | ~p | ~p | ~p | ~p\n", [Error,Params,DirToList,AbsPath,RelPath]),
-					{response(550, "LIST fail TEMP TODO"), sameargs}
-			end
+	DirToList = string:join(Params, " "),
+	AbsPath = Args#ctrl_conn_data.chrootdir,
+	RelPath = Args#ctrl_conn_data.curr_path,
+	case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
+		{ok, NewPath} ->
+			FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
+			io:format("LIST path: ~p\n", [FullPath]),
+			{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
+			ftpd_data_conn:send_msg(list, {lists:sort(FileNames), FullPath}, Args);
+		{error, Error} ->
+			io:format("LIST error: ~p  | ~p | ~p | ~p | ~p\n", 
+									[Error,Params,DirToList,AbsPath,RelPath]),
+			{response(550, "LIST fail TEMP TODO"), sameargs}
 	end;
 
 handle_command(<<"">>, _, _) ->
@@ -211,6 +211,7 @@ send_stream(Sock, Msg) ->
 	gen_tcp:send(Sock, Msg).
 
 %% Construct tuple for response
+%% TODO move to utilities
 -spec response(ReplyCode :: integer(), Message :: string()) -> reply().
 response(ReplyCode, Message) -> {reply, ReplyCode, Message}.
 

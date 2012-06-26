@@ -1,7 +1,7 @@
 -module(ftpd_data_conn).
 
 -export([start_passive_mode/1, pasv_accept/1]).
--export([reinit_passive_conn/1,send_msg/4]).
+-export([reinit_passive_conn/1,send_msg/3]).
 
 -include_lib("ftpd_rep.hrl").
 
@@ -25,8 +25,14 @@ reinit_passive_conn(none) ->
 reinit_passive_conn(LastPid) ->
 	exit(LastPid,shutdown).
 
-send_msg(PasvPid,MsgType,Msg,State) ->
-	PasvPid ! {MsgType, Msg, State}.
+send_msg(MsgType,Msg,State) ->
+	case State#ctrl_conn_data.pasv_pid of
+		none ->
+			{ftpd_ctrl_conn:response(500, "Data connection not established."), sameargs};
+		PasvPid ->
+			PasvPid ! {MsgType, Msg, State}, %% TODO response msg
+			{ftpd_ctrl_conn:response(150, "Opening ASCII mode data connection"), sameargs}
+	end.
 
 pasv_accept(LSock) ->
 	io:format("PASV accept start\n"), 
@@ -35,20 +41,44 @@ pasv_accept(LSock) ->
 		{_, _Res}  -> err_tcp
 	end.
 
-pasv_send_loop(Sock) ->
+pasv_send_loop(DataSock) ->
 	io:format("PASV send loop\n"), 
     receive
 		{list, {FileNames, FullPath}, Args} ->
 			io:format("PASV send LIST data\n"),
 			TempMsg = [ get_file_info(FName,FullPath) || FName <- FileNames],
 			FormattedMsg = string:join(TempMsg, "\r\n") ++ "\r\n",
-			send_stream(Sock, FormattedMsg),
-			case Args#ctrl_conn_data.control_socket of
-				none 		-> io:format("PASV control socket lookup fail\n");
-				ControlSock -> send_reply(ControlSock, 226, "Transfer complete")
+			send_stream(DataSock, FormattedMsg),
+			transfer_complete(Args);
+		{retr, FileName, Args} ->
+			AbsPath = Args#ctrl_conn_data.chrootdir,
+			RelPath = Args#ctrl_conn_data.curr_path,
+			FPath = AbsPath ++ "/" ++ RelPath ++ "/" ++ FileName,
+			case file:read_file(FPath) of
+				{ok, Bin} -> send_stream(DataSock, Bin),
+							 transfer_complete(Args);
+				{error, Reason} ->
+					send_ctrl_response(Args, 550, 
+								"Requested action not taken. File unavailable, not found, not accessible"),
+					io:format("File error: ~p, ~p\n",[Reason,FPath])				
 			end
 	end,
-	gen_tcp:close(Sock).
+	gen_tcp:close(DataSock).
+
+send_ctrl_response(Args, Command, Msg) ->
+	case Args#ctrl_conn_data.control_socket of
+		none ->
+			ok;
+		CtrlSock ->
+			send_reply(CtrlSock, Command, Msg)
+	end.
+
+transfer_complete(Args) ->
+	case Args#ctrl_conn_data.control_socket of
+		none 		-> 
+			io:format("Data connection failed to look up control connection\n");
+		ControlSock -> send_reply(ControlSock, 226, "Transfer complete")
+	end.
 
 %% Convert Code and Message to packet and send
 send_reply(Sock, Code, Message) ->
