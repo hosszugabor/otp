@@ -39,7 +39,8 @@
 	 ls_empty_dir_test/1,
 	 cd_test/1,
 	 download_test/1,
-	 upload_test/1
+	 upload_test/1,
+	 fd_test/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -63,7 +64,7 @@ all() -> [
     ].
 
 groups() ->
-    [{basic_tests, [], [start_stop_test, connect_test, multiple_servers_test, connect_v6_test]},
+    [{basic_tests, [], [start_stop_test, connect_test, multiple_servers_test, connect_v6_test, fd_test]},
      {login_tests, [], [login_success_test, login_failure_test]},
      {directory_tests, [parallel], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test]},
      {download_upload_tests, [], [download_test, upload_test]},
@@ -109,6 +110,8 @@ init_per_testcase(multiple_servers_test, Config) ->
     Config;
 init_per_testcase(connect_v6_test, Config) ->
     Config;
+init_per_testcase(fd_test, Config) ->
+    Config;
 
 init_per_testcase(upload_test, Config0) ->
     Config = ftp_connect(Config0),
@@ -129,6 +132,8 @@ end_per_testcase(connect_test, Config) ->
 end_per_testcase(multiple_servers_test, Config) ->
     Config;
 end_per_testcase(connect_v6_test, Config) ->
+    Config;
+end_per_testcase(fd_test, Config) ->
     Config;
 
 end_per_testcase(upload_test, Config) ->
@@ -178,11 +183,10 @@ multiple_servers_test(_Config) ->
 	inets:stop(ftpd, Pid1)
     end.
 
-
 connect_v6_test(doc) ->
     ["Test that we can connect to the ftp server via IPv6"];
 connect_v6_test(suite) ->
-	[];
+    [];
 connect_v6_test(_Config) ->
     {ok, Pid} = inets:start(ftpd, [{bind_address, {0,0,0,0,0,0,0,1}}, {port, 2021}]),
     try
@@ -190,6 +194,25 @@ connect_v6_test(_Config) ->
 	ok = ftp:close(Ftp)
     after
 	inets:stop(ftpd, Pid)
+    end.
+
+fd_test(doc) ->
+    ["Test that we can pass a file descriptor to FTP server"];
+fd_test(suite) ->
+    [];
+fd_test(_Config) ->
+    {ok, FD} = fd_nif:get_fd(),
+    try
+	{ok, Pid} = inets:start(ftpd, [{fd, FD}]),
+	try
+	    {ok, Ftp} = ftp:open("localhost", [{port,2021}]),
+	    ok = ftp:close(Ftp)
+	after
+	    inets:stop(ftpd, Pid)
+	end
+    after
+	% hack to close the file descriptor in case the test breaks
+	fd_nif:close_fd(FD)
     end.
 
 pwdfun("test", "test") -> authorized;
