@@ -32,7 +32,7 @@ new_connection(Sock, SupPid, Args) ->
 	io:format("---------------- CONNECTION START ----------------\n"),
 	send_reply(Sock, 220, "Hello"),
 	ErlTop = element(2,file:get_cwd()),
-	ChRootDir = proplists:get_value(chrootdir, Args, ErlTop),
+	ChRootDir = proplists:get_value(chrootDir, Args, ErlTop), %% HINT chrootDir vs chrootdir
 	PwdFun = proplists:get_value(pwd_fun, Args, fun(_U,_P) -> not_authorized end), 
 	ConnData = #ctrl_conn_data{ control_socket 	= Sock, 
 								pwd_fun			= PwdFun,
@@ -134,6 +134,7 @@ handle_command("PASV", _, Args) ->
 	{ok, Hostname} = inet:gethostname(),
 	case inet:getaddr(Hostname, inet) of
 		{ok, Address} ->
+			ftpd_data_conn:reinit_passive_conn(Args#ctrl_conn_data.pasv_pid),
 			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(),
 			NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
 			{response(227, "Entering Passive Mode (" ++ format_address(Address, Port) ++ ")."), {newargs, NewArgs}};
@@ -153,7 +154,7 @@ handle_command("LIST", Params, Args) ->
 		none ->
 			{response(500, "TODO: LIST fail"), sameargs};
 		PasvPid ->
-			DirToList = string:join(Params, " ") ++ "/",
+			DirToList = string:join(Params, " "), %% TODO
 			AbsPath = Args#ctrl_conn_data.chrootdir,
 			RelPath = Args#ctrl_conn_data.curr_path,
 			case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
@@ -161,10 +162,11 @@ handle_command("LIST", Params, Args) ->
 					FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
 					io:format("LIST path: ~p", [FullPath]),
 					{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-					PasvPid ! {list, FileNames, Args},
+					ftpd_data_conn:send_msg(PasvPid,list, {FileNames, FullPath},
+																		 Args),
 					{response(150, "Opening ASCII mode data connection for file list"), sameargs};
 				{error, Error} ->
-					io:format("LIST error: ~p", [Error]),
+					io:format("LIST error: ~p  | ~p | ~p | ~p | ~p", [Error,Params,DirToList,AbsPath,RelPath]),
 					{response(550, "LIST fail TEMP TODO"), sameargs}
 			end
 	end;
