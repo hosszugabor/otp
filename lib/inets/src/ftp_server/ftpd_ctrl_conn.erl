@@ -31,6 +31,7 @@ new_connection(Sock, SupPid, Args) ->
 	erlang:monitor(process, SupPid),
 	io:format("---------------- CONNECTION START ----------------\n"),
 	send_reply(Sock, 220, "Hello"),
+
 	ErlTop = element(2,file:get_cwd()),
 	ChRootDir = proplists:get_value(chrootDir, Args, ErlTop), %% HINT chrootDir vs chrootdir
 	PwdFun = proplists:get_value(pwd_fun, Args, fun(_U,_P) -> not_authorized end), 
@@ -138,7 +139,7 @@ handle_command(<<"PASV">>, _, Args) ->
 	case inet:getaddr(Hostname, inet) of
 		{ok, Address} ->
 			ftpd_data_conn:reinit_passive_conn(Args#ctrl_conn_data.pasv_pid),
-			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(),
+			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet4),
 			io:format("Passive mode start, port: ~p\n", [Port]),
 			NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
 			{response(227, "Entering Passive Mode (" ++ format_address(Address, Port) ++ ")."), {newargs, NewArgs}};
@@ -146,6 +147,13 @@ handle_command(<<"PASV">>, _, Args) ->
 			io:format("ERROR: inet:getaddr, ~p\n", [Error]),
 			{response(500, "PASV command failed"), sameargs}
 	end;
+
+handle_command(<<"EPSV">>, _, Args) ->
+	ftpd_data_conn:reinit_passive_conn(Args#ctrl_conn_data.pasv_pid),
+	{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet6),
+	io:format("Passive mode start, port: ~p\n", [Port]),
+	NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
+	{response(229, "Entering Extended Passive Mode (|||" ++ integer_to_list(Port) ++ "|)"), {newargs, NewArgs}};
 
 handle_command(<<"PORT">>, [_Address], _) ->
 	{response(500, "TODO"), sameargs};
@@ -160,7 +168,6 @@ handle_command(<<"LIST">>, ParamsBin, Args) ->
 			{response(500, "TODO: LIST fail"), sameargs};
 		PasvPid ->
 			DirToList = string:join(Params, " "),
-
 			AbsPath = Args#ctrl_conn_data.chrootdir,
 			RelPath = Args#ctrl_conn_data.curr_path,
 			case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
