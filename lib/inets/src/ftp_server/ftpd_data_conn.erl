@@ -1,6 +1,7 @@
 -module(ftpd_data_conn).
 
 -export([start_passive_mode/0, pasv_accept/1]).
+-export([reinit_passive_conn/1,send_msg/4]).
 
 -include_lib("ftpd_rep.hrl").
 
@@ -14,6 +15,14 @@ start_passive_mode() ->
 	Pid = spawn(?MODULE, pasv_accept, [LSock]),
 	{Pid, inet:port(LSock)}.
 
+reinit_passive_conn(none) ->
+	ok;
+reinit_passive_conn(LastPid) ->
+	exit(LastPid,shutdown).
+
+send_msg(PasvPid,MsgType,Msg,State) ->
+	PasvPid ! {MsgType, Msg, State}.
+
 pasv_accept(LSock) ->
 	io:format("PASV accept start\n"), 
 	case gen_tcp:accept(LSock) of
@@ -24,9 +33,9 @@ pasv_accept(LSock) ->
 pasv_send_loop(Sock) ->
 	io:format("PASV send loop\n"), 
     receive
-		{list, Msg, Args} ->
+		{list, {FileNames, FullPath}, Args} ->
 			io:format("PASV send LIST data\n"),
-			TempMsg = [ "drwxrwsr-x   3 47688    60000        4096 Dec  9  2005 " ++ A || A <- Msg],
+			TempMsg = [ get_file_info(FName,FullPath) || FName <- FileNames],
 			FormattedMsg = string:join(TempMsg, "\r\n") ++ "\r\n",
 			send_stream(Sock, FormattedMsg),
 			case Args#ctrl_conn_data.control_socket of
@@ -45,3 +54,37 @@ send_reply(Sock, Code, Message) ->
 %% Send string without formatting
 send_stream(Sock, Msg) ->
 	gen_tcp:send(Sock, Msg).
+
+%% Get file information
+%% drwxrwsr-x   3 47688    60000        4096 Dec-9-2005 empty
+
+get_file_info(FName,FullPath) ->
+%% io:write(FullPath ++ FName),
+{ok,{file_info,Size,Type,Access,
+%%               {{2012,6,21},{17,20,49}},
+			   AccTime,
+               ModTime,
+               {{CYr,CMn,CDa},{CH,CMin,CSec}},
+               Mode,Links,MajorDev,
+			MinorDev,INode,UID,GID}} 
+		= file:read_file_info(FullPath ++ "/" ++ FName),
+	TypeLetter =
+	case Type of %% TODO: UNIX types needed
+		device -> v;
+		directory -> d;
+		other -> o;
+		regular -> '-';
+		symlink -> s;
+		_ -> u
+	end,
+	AccLetter =
+	case Access of
+		read -> 'r--';
+		write -> '-w-';
+		read_write -> 'rw-';
+		_ -> '---'
+	end,
+	lists:concat([TypeLetter,AccLetter,AccLetter,AccLetter,
+	" ", Links, " ", UID, " ", GID, " ", Size, " ", CDa, "-",
+	CMn, "-", CYr, " ", FName])
+.
