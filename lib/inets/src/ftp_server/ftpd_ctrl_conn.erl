@@ -161,6 +161,8 @@ handle_command("LIST", Params, Args) ->
 				{ok, NewPath} ->
 					FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
 					io:format("LIST path: ~p", [FullPath]),
+				%	io:write(AbsPath),
+					io:write(NewPath),
 					{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
 					ftpd_data_conn:send_msg(PasvPid,list, {FileNames, FullPath},
 																		 Args),
