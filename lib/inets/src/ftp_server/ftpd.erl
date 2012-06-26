@@ -40,9 +40,7 @@
 			   {fd, integer()} |			% if fd is used, no need for bind_address and port
 			   {max_clients, integer()} |		% httpd has this option...
 			   {trace_fun, fun()} |			% traces FTP commands, file accesses
-			   {log_fun, fun()} |			% logs login attempts, there should be a default to log to syslog
-
-			   {base_path, path()}.			% default is .
+			   {log_fun, fun()}.			% logs login attempts, there should be a default to log to syslog
 -type ftp_config() 	:: [ftp_option()].
 
 -spec start_standalone(Config :: ftp_config()) -> {ok, pid()} | {error, Reason :: term()}.
