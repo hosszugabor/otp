@@ -14,7 +14,7 @@ set_cwd(Root, Cwd, Req) ->
 					cwd_fun(Root, Cwd, NewReq);
 				true -> 
 					NewReq = slash_correct(dot_correct(Req)),
-					cwd_fun(Root, Root, NewReq)
+					cwd_fun(Root, "/", NewReq)
 			end			
 	end.
 
