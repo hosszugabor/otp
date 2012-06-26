@@ -79,6 +79,8 @@ init_per_group(login_tests, Config) ->
 init_per_group(Group, Config) when Group =:= directory_tests;
 				   Group =:= download_upload_tests -> 
     DataDir = ?config(data_dir, Config),
+	io:write(almalma),
+	io:write(DataDir),
     {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}, {chrootDir, DataDir}]),
     [{ftpd_pid, Pid} | Config];
 
@@ -173,7 +175,11 @@ ls_test(suite) ->
 ls_test(Config) ->
     Ftp = ?config(ftp_pid, Config),
     {ok, LsRoot} = ftp:ls(Ftp),
-    [Dir, Empty, EmptyDir]=re:split(LsRoot, "\\r\\n", [trim]),
+    Lst=re:split(LsRoot, "\\r\\n", [trim]),
+	io:write("\n\n"),
+	io:write(Lst),
+	io:write("\n\n"),
+	[Dir, Empty, EmptyDir] = Lst,
     match = re:run(Dir, "^d.*\sdir$", [{capture, none}]),
     match = re:run(Empty, "^-.*\s0\s+\S+\s+\S+\s+\d+:\d+empty$", [{capture, none}]),
     match = re:run(EmptyDir, "^d.*\sempty_dir$", [{capture, none}]).

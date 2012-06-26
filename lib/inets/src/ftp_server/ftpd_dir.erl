@@ -23,7 +23,7 @@ slash_correct(Cwd) ->
 		0 -> Cwd;
 		Index -> 
 			Head = lists:sublist(Cwd, Index),
-			Tail = lists:nthtail(Index+2, Cwd),
+			Tail = lists:nthtail(Index+1, Cwd),
 			slash_correct(lists:append(Head, Tail))
 	end.
 
@@ -37,11 +37,12 @@ dot_correct(Cwd) ->
 	end.
 
 cwd_fun(_Root, CwdAbsName, "") ->
-	
+	io:format("CwdAbs: ~p\n", [CwdAbsName]),
 	NewAbsName = case lists:suffix("/", CwdAbsName) of
 		true -> lists:sublist(CwdAbsName, length(CwdAbsName)-1);
 		false -> CwdAbsName
 	end,
+	io:format("SlashAbs: ~p\n", [slash_correct(NewAbsName)]),
 	{ok, slash_correct(NewAbsName)};
 
 cwd_fun(Root, CwdAbsName, Req) ->
