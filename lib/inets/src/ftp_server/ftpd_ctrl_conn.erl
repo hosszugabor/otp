@@ -44,8 +44,7 @@ new_connection(Sock, SupPid, Args) ->
 do_recv(Sock, Args) ->
     case gen_tcp:recv(Sock, 0) of
         {ok, Data} ->
-			DataStr        = binary_to_list(Data),
-			{Command, Msg} = packet_to_tokens(DataStr),
+			{Command, Msg} = packet_to_tokens(Data),
 			io:format("[~p-Recv]: ~p - ~p\n", [self(), Command, Msg]),
 			NewArgs = process_message(Sock, Command, Msg, Args),
 			after_reply(Sock, Command, NewArgs);
@@ -71,24 +70,26 @@ process_message(Sock, Command, Msg, Args) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec handle_command(Command :: string(), Message :: list(), Args :: connstate()) -> {reply(), argschange()}.
-handle_command("NOOP", _, _) ->
+handle_command(<<"NOOP">>, _, _) ->
 	{response(200, "NOOP command successful"), sameargs};
 
-handle_command("QUIT", _, _) ->
+handle_command(<<"QUIT">>, _, _) ->
 	{response(221, "Goodbye."), sameargs};
 
-handle_command("USER", [User|_], Args ) ->
-  case Args#ctrl_conn_data.authed of
-    true -> 
-      {response(503, "You are already logged in"), sameargs};
-    false ->
-      NewArgs = Args#ctrl_conn_data{ username = User },
-      {response(331, "Password required for " ++ User), {newargs, NewArgs}}
-  end;
+handle_command(<<"USER">>, [UserBin|_], Args ) ->
+	User = binary_to_list(UserBin),
+	case Args#ctrl_conn_data.authed of
+		true -> 
+			{response(503, "You are already logged in"), sameargs};
+		false ->
+			NewArgs = Args#ctrl_conn_data{ username = User },
+			{response(331, "Password required for " ++ User), {newargs, NewArgs}}
+	end;
 
-handle_command("PASS", [Password|_], Args) ->
+handle_command(<<"PASS">>, [PasswordBin|_], Args) ->
 	Authed = Args#ctrl_conn_data.authed,
 	User   = Args#ctrl_conn_data.username,
+	Password = binary_to_list(PasswordBin),
 	case {Authed, User} of
 		{false, none} -> {response(503, "Login with USER first"),     sameargs};
 		{false, _} ->
@@ -100,7 +101,8 @@ handle_command("PASS", [Password|_], Args) ->
 		{true, _}     -> {response(503, "You are already logged in"), sameargs}
 	end;
 
-handle_command("TYPE", Params, Args) ->
+handle_command(<<"TYPE">>, ParamsBin, Args) ->
+	Params  = [ binary_to_list(E)  || E <- ParamsBin],	%% TEMP
 	ParamsF = [ string:to_upper(E) || E <- Params],
 	case check_repr_type(ParamsF) of
 		true ->
@@ -110,7 +112,8 @@ handle_command("TYPE", Params, Args) ->
 			{response(500, "'TYPE " ++ string:join(Params, " ") ++ "' not understood"), sameargs}
 	end;
 
-handle_command("CWD", Params, Args) ->
+handle_command(<<"CWD">>, ParamsBin, Args) ->
+	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
 	NewDir = string:join(Params, " "),
 	CurDir = Args#ctrl_conn_data.curr_path,
 	BaseDir = Args#ctrl_conn_data.chrootdir,
@@ -124,32 +127,34 @@ handle_command("CWD", Params, Args) ->
 			{response(550, NewDir ++ ": No such file or directory"), sameargs}
 	end;
 
-handle_command("PWD", [], Args) ->
+handle_command(<<"PWD">>, [], Args) ->
 	{response(257, "\"" ++ Args#ctrl_conn_data.curr_path ++ "\" is the current directory"), sameargs};
 
-handle_command("PWD", _, _) ->	% TODO: generalize
+handle_command(<<"PWD">>, _, _) ->	% TODO: generalize
 	{response(501, "Invalid number of arguments"), sameargs};
 
-handle_command("PASV", _, Args) ->
+handle_command(<<"PASV">>, _, Args) ->
 	{ok, Hostname} = inet:gethostname(),
 	case inet:getaddr(Hostname, inet) of
 		{ok, Address} ->
 			ftpd_data_conn:reinit_passive_conn(Args#ctrl_conn_data.pasv_pid),
 			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(),
+			io:format("Passive mode start, port: ~p\n", [Port]),
 			NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
 			{response(227, "Entering Passive Mode (" ++ format_address(Address, Port) ++ ")."), {newargs, NewArgs}};
 		{error, Error} ->
-			io:format("ERROR: inet:getaddr, ~p", [Error]),
+			io:format("ERROR: inet:getaddr, ~p\n", [Error]),
 			{response(500, "PASV command failed"), sameargs}
 	end;
 
-handle_command("PORT", [_Address], _) ->
+handle_command(<<"PORT">>, [_Address], _) ->
 	{response(500, "TODO"), sameargs};
 
-handle_command("PORT", _, _) ->
+handle_command(<<"PORT">>, _, _) ->
 	{response(501, "Illegal PORT command"), sameargs};
 
-handle_command("LIST", Params, Args) ->
+handle_command(<<"LIST">>, ParamsBin, Args) ->
+	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
 	case Args#ctrl_conn_data.pasv_pid of
 		none ->
 			{response(500, "TODO: LIST fail"), sameargs};
@@ -161,22 +166,22 @@ handle_command("LIST", Params, Args) ->
 			case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
 				{ok, NewPath} ->
 					FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
-					io:format("LIST path: ~p", [FullPath]),
+					io:format("LIST path: ~p\n", [FullPath]),
 					{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
 					ftpd_data_conn:send_msg(PasvPid,list, {FileNames, FullPath},
 																		 Args),
 					{response(150, "Opening ASCII mode data connection for file list"), sameargs};
 				{error, Error} ->
-					io:format("LIST error: ~p  | ~p | ~p | ~p | ~p", [Error,Params,DirToList,AbsPath,RelPath]),
+					io:format("LIST error: ~p  | ~p | ~p | ~p | ~p\n", [Error,Params,DirToList,AbsPath,RelPath]),
 					{response(550, "LIST fail TEMP TODO"), sameargs}
 			end
 	end;
 
-handle_command("", _, _) ->
+handle_command(<<"">>, _, _) ->
 	{response(500, "Invalid command: try being more creative"), sameargs};
 
 handle_command(Command, _, _) ->
-	{response(500, Command ++ " not implemented"), sameargs}.
+	{response(500, binary_to_list(Command) ++ " not implemented"), sameargs}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Control functions
@@ -203,7 +208,7 @@ send_stream(Sock, Msg) ->
 response(ReplyCode, Message) -> {reply, ReplyCode, Message}.
 
 %% Control behaviour after replying to a message
-after_reply(Sock, "QUIT", _) ->
+after_reply(Sock, <<"QUIT">>, _) ->
 	io:format("---------------- CONNECTION CLOSE ----------------\n"),
 	close_connection(Sock);
 after_reply(Sock, _, Args) ->
@@ -221,16 +226,21 @@ format_address({A1, A2, A3, A4}, Port) ->
 	<<P1:8, P2:8>> = <<Port:16>>,
 	lists:concat([A1,",",A2,",",A3,",",A4,",",P1,",",P2]).
 
+bin_to_upper(T) ->
+	<< <<if ((X =< 122) and (X >= 97)) -> X - 32; true -> X end>> || <<X:8>> <= T >>.
+
+%%
+%% re:split(<<"asd dsa">>, " ").
+%% re:replace(<<"asd dsa\r\n">>,"\r\n", "",[{return,list}]). 
+
 %% Separate command from message and convert to upper case, eg. "user someone" -> {"USER", ["someone"]}
--spec packet_to_tokens(Data :: string()) -> {Command :: string(), [Message :: string()]}.
+%% OUTDATED -spec packet_to_tokens(Data :: string()) -> {Command :: string(), [Message :: string()]}.
 packet_to_tokens(Data) ->
-	TrimmedData = string:strip(string:strip(Data, right, ?LF), right, ?CR),
-	case string:str(TrimmedData, " ") of
-		0   -> {string:to_upper(TrimmedData), ""};
-		Len ->
-			Command = string:to_upper(string:sub_string(TrimmedData, 1, Len - 1)),
-			Msg     = string:sub_string(TrimmedData, length(Command) + 2),
-    		{Command, string:tokens(Msg, " ")}
+	TrimmedData = re:replace(Data, "\r\n", "",[{return,list}]),
+	SplittedData = re:split(TrimmedData, " "),
+	case SplittedData of
+		[Command | Msg] -> {bin_to_upper(Command), Msg};
+		_               -> io:format("Error: packet parse failed\n"), {"", []}
 	end.
 
 proplist_modify(Key, Value, PropList) ->
