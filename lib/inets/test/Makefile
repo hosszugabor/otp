@@ -183,7 +183,8 @@ MODULES =                 		\
         inets_appup_test  		\
         tftp_test_lib			\
         tftp_SUITE			\
-	ftpd_SUITE
+	ftpd_SUITE			\
+	fd_nif
 
 
 EBIN = .
@@ -216,8 +217,9 @@ INETS_DATADIRS = inets_SUITE_data inets_sup_SUITE_data
 HTTPD_DATADIRS = httpd_test_data httpd_SUITE_data
 HTTPC_DATADIRS = httpc_SUITE_data
 FTP_DATADIRS   = ftp_SUITE_data  
+FTPD_DATADIRS  = ftpd_SUITE_data  
 
-DATADIRS     = $(INETS_DATADIRS) $(HTTPD_DATADIRS) $(HTTPC_DATADIRS) $(FTP_DATADIRS)
+DATADIRS     = $(INETS_DATADIRS) $(HTTPD_DATADIRS) $(HTTPC_DATADIRS) $(FTP_DATADIRS) $(FTPD_DATADIRS)
 
 EMAKEFILE  = Emakefile
 MAKE_EMAKE = $(wildcard $(ERL_TOP)/make/make_emakefile)
@@ -270,11 +272,13 @@ emakebuild: $(EMAKEFILE)
 $(EMAKEFILE): 
 	$(MAKE_EMAKE) $(ERL_COMPILE_FLAGS) -o$(EBIN) '*_SUITE_make' | grep -v Warning > $(EMAKEFILE)
 	$(MAKE_EMAKE) $(ERL_COMPILE_FLAGS) -o$(EBIN) $(MODULES) | grep -v Warning >> $(EMAKEFILE)
+	cd c_src && make && cd ..
 
 clean:
 	rm -f $(EMAKEFILE)
 	rm -f $(TARGET_FILES)
 	rm -f core *~
+	cd c_src && make clean && cd ..
 
 docs:
 
