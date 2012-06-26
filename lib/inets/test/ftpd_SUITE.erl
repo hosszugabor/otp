@@ -30,6 +30,7 @@
 
 -export([start_stop_test/1,
 	 connect_test/1,
+	 connect_v6_test/1,
      	 login_success_test/1,
      	 login_failure_test/1,
 	 ls_test/1,
@@ -52,16 +53,20 @@
 %%--------------------------------------------------------------------
 suite() -> [].
 
-all() ->
-    [start_stop_test, connect_test, 
+all() -> [
+	{group, basic_tests}, 
 	{group, login_tests}, 
 	{group, directory_tests},
-    	{group, download_upload_tests}].
+    	{group, download_upload_tests},
+        {group, ipv6_tests}
+    ].
 
 groups() ->
-    [{login_tests, [], [login_success_test, login_failure_test]},
-     {directory_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test]},
-     {download_upload_tests, [], [download_test, upload_test]}
+    [{basic_tests, [], [start_stop_test, connect_test, connect_v6_test]},
+     {login_tests, [], [login_success_test, login_failure_test]},
+     {directory_tests, [parallel], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test]},
+     {download_upload_tests, [], [download_test, upload_test]},
+     {ipv6_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test, download_test, upload_test]}
     ].
 
 init_per_suite(Config) ->
@@ -72,32 +77,34 @@ end_per_suite(Config) ->
     inets:stop(),
     Config.
 
-init_per_group(login_tests, Config) ->
-    {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}]),
-    [{ftpd_pid, Pid} | Config];
-
-init_per_group(Group, Config) when Group =:= directory_tests;
-				   Group =:= download_upload_tests -> 
+init_per_group(basic_tests, Config) ->
+    Config;
+init_per_group(ipv6_tests, Config) -> 
+    DataDir = ?config(data_dir, Config),
+    FtpHost = {0,0,0,0,0,0,0,1},
+    {ok, Pid} = inets:start(ftpd, [{bind_address, FtpHost}, 
+	    			   {port, 2021}, 
+				   {pwd_fun, fun pwdfun/2}, 
+				   {chrootDir, DataDir}]),
+			   [{ftpd_pid, Pid}, {ftp_server_address, FtpHost} | Config];
+init_per_group(_Group, Config) -> 
     DataDir = ?config(data_dir, Config),
 	io:write(almalma),
 	io:write(DataDir),
     {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}, {chrootDir, DataDir}]),
-    [{ftpd_pid, Pid} | Config];
+    [{ftpd_pid, Pid}, {ftp_server_address, "localhost"} | Config].
 
-init_per_group(_Group, Config) ->
-    Config.
-
+end_per_group(basic_tests, Config) ->
+    Config;
 end_per_group(_Group, Config) ->
-    case ?config(ftpd_pid, Config) of
-	undefined ->
-	    ok;
-	Pid ->
-	    inets:stop(ftpd, Pid)
-    end.
+    Pid = ?config(ftpd_pid, Config),
+    inets:stop(ftpd, Pid).
 
 init_per_testcase(start_stop_test, Config) ->
     Config;
 init_per_testcase(connect_test, Config) ->
+    Config;
+init_per_testcase(connect_v6_test, Config) ->
     Config;
 
 init_per_testcase(upload_test, Config0) ->
@@ -144,6 +151,16 @@ connect_test(suite) ->
 connect_test(_Config) ->
     {ok, Pid} = inets:start(ftpd, [{port, 2021}]),
     {ok, Ftp} = ftp:open("localhost", [{port,2021}]),
+    ok = ftp:close(Ftp),
+    inets:stop(ftpd, Pid).
+
+connect_v6_test(doc) ->
+    ["Test that we can connect to the ftp server via IPv6"];
+connect_v6_test(suite) ->
+	[];
+connect_v6_test(_Config) ->
+    {ok, Pid} = inets:start(ftpd, [{bind_address, {0,0,0,0,0,0,0,1}}, {port, 2021}]),
+    {ok, Ftp} = ftp:open({0,0,0,0,0,0,0,1}, [{port,2021}, {ipfamily, inet6}]),
     ok = ftp:close(Ftp),
     inets:stop(ftpd, Pid).
 
@@ -245,7 +262,14 @@ upload_test(Config) ->
     {ok, <<"ABC">>} = file:read_file(filename:join(DataDir, DataFileName)).
 
 ftp_connect(Config) ->
-    {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
+    FtpHost = ?config(ftp_server_address, Config),
+    IpFamily = case inet:getaddr(FtpHost, inet) of
+	{ok, _} -> 
+	    [];
+	_ -> % this is just test code, I suppose only exiting addresses are used
+	    [{ipfamily, inet6}]
+    end,
+    {ok, Ftp} = ftp:open(FtpHost, [{port, 2021} | IpFamily]),
     ok = ftp:user(Ftp, "test", "test"),
     [{ftp_pid, Ftp} | Config].
 
