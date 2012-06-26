@@ -18,9 +18,20 @@ start_link(Args) ->
 
 init(Args) ->
 	process_flag(trap_exit, true),
+
 	Port = proplists:get_value(port,Args),
     SupPid = proplists:get_value(sup_pid,Args),
-    {ok, LSock} = gen_tcp:listen(Port, [binary, {packet, 0}, {active, false}]),
+
+	SockArgs =
+		case proplists:lookup(bind_address, Args) of
+			{bind_address, Addr={_,_,_,_,_,_,_,_}} ->
+				[binary, {packet, 0}, {active, false}, {ip, Addr}, inet6];
+			{bind_address, Addr} ->
+				[binary, {packet, 0}, {active, false}, {ip, Addr}];
+			none ->
+				[binary, {packet, 0}, {active, false}]
+			end,
+    {ok, LSock} = gen_tcp:listen(Port, SockArgs),
     spawn(?MODULE, loop, [LSock, SupPid, Args]), %% Args also contains SupPid!! TODO
 	{ok, {Port, SupPid, LSock}}.
 
