@@ -22,9 +22,10 @@
 
 -include_lib("test_server/include/test_server.hrl").
 -include("test_server_line.hrl").
+-include_lib("inets/include/ftpd.hrl").
 
 %% Test server specific exports
--export([all/0, suite/0,groups/0,init_per_group/2,end_per_group/2]).
+-export([all/0, suite/0, groups/0, init_per_group/2, end_per_group/2]).
 -export([init_per_testcase/2, end_per_testcase/2,
 	 init_per_suite/1, end_per_suite/1]).
 
@@ -40,8 +41,13 @@
 	 cd_test/1,
 	 download_test/1,
 	 upload_test/1,
-	 fd_test/1
+	 fd_test/1,
+	 log_trace_test/1
 	]).
+
+-define(USER, "test").
+-define(PASS, "test").
+-define(WRONGPASS, "test2").
 
 %%--------------------------------------------------------------------
 %% all(Arg) -> [Doc] | [Case] | {skip, Comment}
@@ -60,7 +66,8 @@ all() -> [
 	{group, login_tests}, 
 	{group, directory_tests},
     	{group, download_upload_tests},
-        {group, ipv6_tests}
+        {group, ipv6_tests},
+	{group, log_trace_tests}
     ].
 
 groups() ->
@@ -68,7 +75,8 @@ groups() ->
      {login_tests, [], [login_success_test, login_failure_test]},
      {directory_tests, [parallel], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test]},
      {download_upload_tests, [], [download_test, upload_test]},
-     {ipv6_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test, download_test, upload_test]}
+     {ipv6_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test, download_test, upload_test]},
+     {log_trace_tests, [], [log_trace_test]}
     ].
 
 init_per_suite(Config) ->
@@ -81,6 +89,18 @@ end_per_suite(Config) ->
 
 init_per_group(basic_tests, Config) ->
     Config;
+init_per_group(log_trace_tests, Config) ->
+    TableOwner = spawn(fun() -> receive test_finished -> ok end end),
+    Tid = ets:new(logtrace, [public, named_table, {heir, TableOwner, none}]),
+    DataDir = ?config(data_dir, Config),
+    {ok, Pid} = inets:start(ftpd, [{port, 2021}, 
+	    			   {pwd_fun, fun pwdfun/2}, 
+				   {chrootDir, DataDir},
+			       	   {log_fun, fun logfun/2},
+			       	   {trace_fun, fun tracefun/2}]),
+    [{ftpd_pid, Pid}, {ftp_server_address, "localhost"},
+     {table_owner, TableOwner}, {table, Tid} | Config];
+
 init_per_group(ipv6_tests, Config) -> 
     DataDir = ?config(data_dir, Config),
     FtpHost = {0,0,0,0,0,0,0,1},
@@ -89,6 +109,7 @@ init_per_group(ipv6_tests, Config) ->
 				   {pwd_fun, fun pwdfun/2}, 
 				   {chrootDir, DataDir}]),
 			   [{ftpd_pid, Pid}, {ftp_server_address, FtpHost} | Config];
+
 init_per_group(_Group, Config) -> 
     DataDir = ?config(data_dir, Config),
 	io:write(almalma),
@@ -98,6 +119,13 @@ init_per_group(_Group, Config) ->
 
 end_per_group(basic_tests, Config) ->
     Config;
+
+end_per_group(log_trace_tests, Config) ->
+    ets:delete(?config(table, Config)),
+    ?config(table_owner, Config) ! test_finished,
+    Pid = ?config(ftpd_pid, Config),
+    inets:stop(ftpd, Pid);
+
 end_per_group(_Group, Config) ->
     Pid = ?config(ftpd_pid, Config),
     inets:stop(ftpd, Pid).
@@ -134,6 +162,8 @@ end_per_testcase(multiple_servers_test, Config) ->
 end_per_testcase(connect_v6_test, Config) ->
     Config;
 end_per_testcase(fd_test, Config) ->
+    Config;
+end_per_testcase(log_trace_tests, Config) ->
     Config;
 
 end_per_testcase(upload_test, Config) ->
@@ -215,7 +245,7 @@ fd_test(_Config) ->
 	fd_nif:close_fd(FD)
     end.
 
-pwdfun("test", "test") -> authorized;
+pwdfun(?USER, ?PASS) -> authorized;
 pwdfun(_, _) -> not_authorized.
 
 login_success_test(doc) ->
@@ -224,7 +254,7 @@ login_success_test(suite) ->
     [];
 login_success_test(_Config) ->
     {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
-    ok = ftp:user(Ftp, "test", "test"),
+    ok = ftp:user(Ftp, ?USER, ?PASS),
     ftp:close(Ftp).
 
 login_failure_test(doc) ->
@@ -233,7 +263,7 @@ login_failure_test(suite) ->
     [];
 login_failure_test(_Config) ->
     {ok, Ftp} = ftp:open("localhost", [{port, 2021}]),
-    {error, euser} = ftp:user(Ftp, "test", "test2"),
+    {error, euser} = ftp:user(Ftp, ?USER, ?WRONGPASS),
     ftp:close(Ftp).
 
 ls_test(doc) ->
@@ -310,6 +340,50 @@ upload_test(Config) ->
     {ok, <<>>} = file:read_file(filename:join(DataDir, EmptyFileName)),
     {ok, <<"ABC">>} = file:read_file(filename:join(DataDir, DataFileName)).
 
+log_trace_test(doc) ->
+    ["Check that logging and tracing works"];
+log_trace_test(suite) ->
+    [];
+log_trace_test(Config) ->
+    Tid = ?config(table, Config),
+    [{_, "User "++?USER++" successfully logged in."}] = ets:lookup(Tid, ?LOGIN_OK),
+    [] = ets:lookup(Tid, ?LOGIN_FAIL),
+    Ftp = ?config(ftp_pid, Config),
+    PrivDir = ?config(priv_dir, Config),
+    ftp:lcd(Ftp, PrivDir),
+    ok = ftp:cd(Ftp, "dir"),
+    [{_, "Changed directory to dir"}] = ets:lookup(Tid, ?CWD),
+    _ = ftp:ls(Ftp),
+    [{_, "Listed directory /dir"}] = ets:lookup(Tid, ?LIST),
+    ok = ftp:recv(Ftp, "123"),
+    [{_, "File /dir/123 downloaded to" ++ _}] = ets:lookup(Tid, ?RETR),
+    ftp_close(Ftp),
+    [{_, "User "++?USER++" logged out."}] = ets:lookup(Tid, ?CONN_CLOSE).
+
+
+logfun(?LOGIN_OK=Event, [UserName]) ->
+    ets:insert(logtrace, {Event, "User "++UserName++" successfully logged in."});
+logfun(?LOGIN_FAIL=Event, [UserName]) ->
+    ets:insert(logtrace, {Event, "User "++UserName++" failed to log in."});
+logfun(?CONN_CLOSE=Event, [UserName]) ->
+    ets:insert(logtrace, {Event, "User "++UserName++" logged out."});
+logfun(Event, Params) ->
+    ets:insert(logtrace, f("Unknown log, event: ~p, params: ~p", [Event, Params])).
+
+tracefun(?CWD=Event, [Dir]) ->
+    ets:insert(logtrace, {Event, "Changed directory to "++Dir});
+tracefun(?RETR=Event, [FileOnServer, FileOnClient]) ->
+    ets:insert(logtrace, {Event, "File "++FileOnServer++" downloaded to "++FileOnClient});
+tracefun(?STOR=Event, [FileOnServer, FileOnClient]) ->
+    ets:insert(logtrace, {Event, "File "++FileOnClient++" uploaded to "++FileOnServer});
+tracefun(?LIST=Event, [Dir]) ->
+    ets:insert(logtrace, {Event, "Listed directory "++Dir});
+tracefun(Event, Params) ->
+    ets:insert(logtrace, f("Unknown trace, event: ~p, params: ~p", [Event, Params])).
+
+f(Format, Params) ->
+    lists:flatten(io_lib:format(Format, Params)).
+
 ftp_connect(Config) ->
     FtpHost = ?config(ftp_server_address, Config),
     IpFamily = case inet:getaddr(FtpHost, inet) of
@@ -319,7 +393,7 @@ ftp_connect(Config) ->
 	    [{ipfamily, inet6}]
     end,
     {ok, Ftp} = ftp:open(FtpHost, [{port, 2021} | IpFamily]),
-    ok = ftp:user(Ftp, "test", "test"),
+    ok = ftp:user(Ftp, ?USER, ?PASS),
     [{ftp_pid, Ftp} | Config].
 
 ftp_close(Config) ->
