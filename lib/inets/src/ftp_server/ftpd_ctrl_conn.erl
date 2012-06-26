@@ -167,8 +167,8 @@ handle_command(<<"LIST">>, ParamsBin, Args) ->
 					FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
 					io:format("LIST path: ~p\n", [FullPath]),
 					{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-					ftpd_data_conn:send_msg(PasvPid,list, {FileNames, FullPath},
-																		 Args),
+					ftpd_data_conn:send_msg(PasvPid,list, {lists:sort(FileNames), 
+															FullPath},	 Args),
 					{response(150, "Opening ASCII mode data connection for file list"), sameargs};
 				{error, Error} ->
 					io:format("LIST error: ~p  | ~p | ~p | ~p | ~p\n", [Error,Params,DirToList,AbsPath,RelPath]),
