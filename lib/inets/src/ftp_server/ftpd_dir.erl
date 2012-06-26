@@ -63,8 +63,9 @@ step_forward(Root, CwdAbsName, 0, Req) ->
 
 step_forward(Root, CwdAbsName, Index, Req) ->
 	{CurrPwd, NextReq} = lists:split(Index-1, Req),
-	NewAbsName = string:join([CwdAbsName, CurrPwd], ""),
-	case filelib:is_dir(string:join([Root, NewAbsName], "")) of
+	NewAbsName = string:join([Root, CwdAbsName, CurrPwd], ""),
+	CorrectedAbsName = slash_correct(NewAbsName),
+	case filelib:is_dir(CorrectedAbsName) of
 		true -> {ok, {NewAbsName, NextReq}};
 		false -> {error, invalid_dir}
 	end.
