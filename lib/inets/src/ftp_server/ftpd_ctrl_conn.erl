@@ -159,7 +159,8 @@ handle_command(<<"LIST">>, ParamsBin, Args) ->
 		none ->
 			{response(500, "TODO: LIST fail"), sameargs};
 		PasvPid ->
-			DirToList = string:join(Params, " "), %% TODO
+			DirToList = string:join(Params, " "),
+
 			AbsPath = Args#ctrl_conn_data.chrootdir,
 			RelPath = Args#ctrl_conn_data.curr_path,
 			case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
