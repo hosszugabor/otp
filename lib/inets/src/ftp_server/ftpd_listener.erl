@@ -18,9 +18,13 @@ start_link(Args) ->
 
 init(Args) ->
 	process_flag(trap_exit, true),
+	
+	Port = case proplists:lookup(port,Args) of
+		{port, Pt} -> Pt;
+		none -> 21
+		end, 
 
-	Port = proplists:get_value(port,Args),
-    SupPid = proplists:get_value(sup_pid,Args),
+   	SupPid = proplists:get_value(sup_pid,Args),
 
 	SockArgs =
 		case proplists:lookup(bind_address, Args) of
@@ -31,9 +35,22 @@ init(Args) ->
 			none ->
 				[binary, {packet, 0}, {active, false}]
 			end,
-    {ok, LSock} = gen_tcp:listen(Port, SockArgs),
-    spawn(?MODULE, loop, [LSock, SupPid, Args]), %% Args also contains SupPid!! TODO
+	NewSockArgs =
+		case proplists:lookup(fd, Args) of
+			none -> SockArgs;
+			FdProp -> 
+				io:format("Fd connection"),
+				[FdProp | SockArgs]
+		end, 
+
+
+   	 {ok, LSock} = gen_tcp:listen(Port, NewSockArgs),
+    	spawn(?MODULE, loop, [LSock, SupPid, Args]), %% Args also contains SupPid!! TODO
 	{ok, {Port, SupPid, LSock}}.
+
+
+
+
 
 handle_call(_Req, _From, State) -> {noreply, State}.
 handle_cast(_Req, State) -> {noreply, State}.
