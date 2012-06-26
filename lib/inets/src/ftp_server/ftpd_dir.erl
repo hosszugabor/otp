@@ -36,17 +36,21 @@ dot_correct(Cwd) ->
 			dot_correct(lists:append(Head, Tail))
 	end.
 
-cwd_fun(_Root, CwdAbsName, "") ->
-	io:format("CwdAbs: ~p\n", [CwdAbsName]),
-	NewAbsName = case lists:suffix("/", CwdAbsName) of
-		true -> lists:sublist(CwdAbsName, length(CwdAbsName)-1);
-		false -> CwdAbsName
-	end,
-	io:format("SlashAbs: ~p\n", [slash_correct(NewAbsName)]),
-	{ok, slash_correct(NewAbsName)};
+cwd_fun(Root, CwdAbsName, "") ->
+%	io:format("CwdAbs: ~p\n", [CwdAbsName]),
+	case lists:suffix("/", CwdAbsName) of
+		true -> 
+			NewAbsName = lists:sublist(CwdAbsName, length(CwdAbsName)-1),
+			cwd_fun(Root, NewAbsName, "");
+		false -> 
+			CwdAbsName,
+			{ok, slash_correct(CwdAbsName)}
+	end;
+%	io:format("SlashAbs: ~p\n", [slash_correct(NewAbsName)]),
+
 
 cwd_fun(Root, CwdAbsName, Req) ->
-	io:format("~p\n", [Req]),
+%	io:format("~p\n", [Req]),
 	{Index, Acc, NewReq} = cdd_fun(Req, 0),
 	NewCwd = step_back(CwdAbsName, Acc),
 	case step_forward(Root, NewCwd, Index, NewReq) of
