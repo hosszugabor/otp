@@ -42,7 +42,10 @@ RELSYSDIR = $(RELEASE_PATH)/lib/$(APPLICATION)-$(VSN)
 MODULES = \
 	ftpd \
 	ftpd_sup \
-	ftpd_listener
+	ftpd_listener \
+	ftpd_ctrl_conn \
+	ftpd_data_conn \
+	ftpd_dir
 
 HRL_FILES =
 
