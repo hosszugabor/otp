@@ -1,6 +1,6 @@
 -module(ftpd_data_conn).
 
--export([start_passive_mode/0, pasv_accept/1]).
+-export([start_passive_mode/1, pasv_accept/1]).
 -export([reinit_passive_conn/1,send_msg/4]).
 
 -include_lib("ftpd_rep.hrl").
@@ -9,9 +9,14 @@
 %% Passive mode
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_passive_mode() ->
+start_passive_mode(Ipv) ->
 	io:format("PASV start\n"), 
-	{ok, LSock} = gen_tcp:listen(0, [binary, {packet, 0}, {active, false}]),
+	SockArgs =
+		case Ipv of
+			inet4 -> [binary, {packet, 0}, {active, false}];
+			inet6 -> [binary, {packet, 0}, {active, false}, inet6]
+		end,
+	{ok, LSock} = gen_tcp:listen(0, SockArgs),
 	Pid = spawn(?MODULE, pasv_accept, [LSock]),
 	{Pid, inet:port(LSock)}.
 
