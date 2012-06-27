@@ -240,6 +240,14 @@ handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
 			{?RESP(550, "LIST fail TEMP TODO"), sameargs}
 	end;
 
+handle_command(<<"NLST">>, [], Args) ->
+	AbsPath = Args#ctrl_conn_data.chrootdir,
+	RelPath = Args#ctrl_conn_data.curr_path,
+	io:format("NLST path \n", []),
+	FullPath = AbsPath ++ "/" ++ RelPath,
+	{ok, FileNames} = file:list_dir(FullPath),
+	ftpd_data_conn:send_msg(nlst, {lists:sort(FileNames), ""}, Args);
+
 handle_command(<<"MKD">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],
 	Dir = string:join(Params, " "),
@@ -296,7 +304,6 @@ handle_command(<<"RNTO">>, ParamsBin, Args) ->
 		none ->
 			{?RESP(550, "RNTO command failed (1)"), sameargs};
 		FromPath ->
-			TransFun = fun(F) -> case file_lib:is_dir(F) of true -> F ++ "/";
 			io:format("From: ~p || To: ~p", [FromPath, ToPath]),
 			case file:rename(FromPath, ToPath) of
 				ok ->
