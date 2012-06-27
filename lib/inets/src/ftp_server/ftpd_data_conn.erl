@@ -60,10 +60,39 @@ pasv_send_loop(DataSock) ->
 				{error, Reason} ->
 					send_ctrl_response(Args, 550, 
 								"Requested action not taken. File unavailable, not found, not accessible"),
-					io:format("File error: ~p, ~p\n",[Reason,FPath])				
+					io:format("File error: ~p, ~p\n",[Reason,FPath])	
+			end;
+		{stor, FileName, Args} ->
+			AbsPath = Args#ctrl_conn_data.chrootdir, %% TODO duplicated code here and before, solution: make_filepath fun
+			RelPath = Args#ctrl_conn_data.curr_path,
+			FPath = AbsPath ++ "/" ++ RelPath ++ "/" ++ FileName,
+			case receive_and_store(DataSock,FPath) of
+				ok 				-> 	transfer_complete(Args); 
+				{error, Reason} ->
+					send_ctrl_response(Args, 550, 
+								"Requested action not taken. File unavailable, not found, not accessible"),
+					io:format("File receive error: ~p\n",[Reason])
 			end
 	end,
 	gen_tcp:close(DataSock).
+
+
+%%	Nothing more just wrapper for gen_tcp:recv
+%%	
+receive_and_store(DataSock,FPath) ->
+	{ok, Id} = file:open(FPath,[append,binary]),
+	case {receive_and_write_chunks(DataSock,Id), file:close(Id)} of
+		{ok, ok} -> ok;
+		_ 		 -> {error, receive_fail}
+	end.
+
+receive_and_write_chunks(DataSock,DevId) ->
+    case gen_tcp:recv(DataSock, 0) of
+        {ok, Data} 		-> file:write(DevId,Data),
+						   receive_and_write_chunks(DataSock,DevId);
+        {error, closed} -> ok;
+		{error, Reason}	-> {error, Reason}
+    end.
 
 send_ctrl_response(Args, Command, Msg) ->
 	case Args#ctrl_conn_data.control_socket of
