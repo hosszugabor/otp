@@ -77,8 +77,8 @@ get_file_info(FName,FullPath) ->
 		_ -> '---'
 	end,
 	lists:concat([TypeLetter,AccLetter,AccLetter,AccLetter,
-	" ", Links, " ", UID, " ", GID, " ", Size, " ", CDa, " ",
-	CMn, " ", CYr, " ", CH, ":", CMin, " ", FName]).
+	" ", Links, " ", UID, " ", GID, " ", Size, " ", httpd_util:month(CMn), " ",
+	CDa, " ", CYr, " ", FName]). %% CH, ":", CMin, " ", 
 
 logf(ConnData, Event, Params) ->
 	LogFun = ConnData#ctrl_conn_data.log_fun,

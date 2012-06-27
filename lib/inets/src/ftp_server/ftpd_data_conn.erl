@@ -42,7 +42,7 @@ reinit_active_conn(LastPid) ->
 	reinit_passive_conn(LastPid).
 
 send_msg(MsgType,Msg,State) ->
-	case State#ctrl_conn_data.pasv_pid of
+	case State#ctrl_conn_data.data_pid of
 		none ->
 			{?RESP(500, "Data connection not established."), sameargs};
 		PasvPid ->
@@ -67,7 +67,7 @@ pasv_send_loop(DataSock) ->
 		{list, {FileNames, FullPath}, Args} ->
 			io:format("PASV send LIST data\n"),
 			TempMsg      = [ ?UTIL:get_file_info(FName,FullPath) || FName <- FileNames],
-			FormattedMsg = string:join(TempMsg, "\r\n") ++ "\r\n",
+			FormattedMsg = string:join(TempMsg, "\r\n"),
 			gen_tcp:send(DataSock, FormattedMsg),
 			transfer_complete(Args);
 		{retr, FileName, Args} ->
