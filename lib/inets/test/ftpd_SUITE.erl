@@ -38,7 +38,9 @@
 	 ls_test/1,
 	 ls_dir_test/1,
 	 ls_empty_dir_test/1,
+	 nlist_test/1,
 	 cd_test/1,
+	 pwd_test/1,
 	 download_test/1,
 	 upload_test/1,
 	 fd_test/1,
@@ -73,7 +75,7 @@ all() -> [
 groups() ->
     [{basic_tests, [], [start_stop_test, connect_test, multiple_servers_test, connect_v6_test, fd_test]},
      {login_tests, [], [login_success_test, login_failure_test]},
-     {directory_tests, [parallel], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test]},
+     {directory_tests, [parallel], [ls_test, ls_dir_test, ls_empty_dir_test, nlist_test, cd_test, pwd_test]},
      {download_upload_tests, [], [download_test, upload_test]},
      {ipv6_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test, download_test, upload_test]},
      {log_trace_tests, [], [log_trace_test]}
@@ -299,6 +301,16 @@ ls_empty_dir_test(Config) ->
     {ok, LsEmpty} = ftp:ls(Ftp, "empty_dir"),
     []=re:split(LsEmpty, "\\r\\n", [trim]).
 
+nlist_test(doc) ->
+    ["Test that the user can list the files from the current directory"];
+nlist_test(suite) ->
+    [];
+nlist_test(Config) ->
+    Ftp = ?config(ftp_pid, Config),
+    {ok, LsRoot} = ftp:nlist(Ftp),
+    Lst=re:split(LsRoot, "\\r\\n", [trim]),
+    ["dir", "empty", "empty_dir"] = Lst.
+
 cd_test(doc) ->
     ["Test that the user can change a directory"];
 cd_test(suite) ->
@@ -310,6 +322,16 @@ cd_test(Config) ->
     [_]=re:split(LsDir, "\\r\\n", [trim]),
     ok = ftp:cd(Ftp, ".."),
     ls_test(Config).
+
+pwd_test(doc) ->
+    ["Test that the user can list the current working directory"];
+pwd_test(suite) ->
+    [];
+pwd_test(Config) ->
+    Ftp = ?config(ftp_pid, Config),
+    {ok, "/"} = ftp:pwd(Ftp),
+    ok = ftp:cd(Ftp, "dir"),
+    {ok, "/dir"} = ftp:pwd(Ftp).
 
 download_test(doc) ->
     ["Test that the user can download files."];
