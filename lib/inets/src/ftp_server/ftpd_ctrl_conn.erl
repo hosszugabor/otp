@@ -3,6 +3,8 @@
 -export([new_connection/3]).
 -export([response/2]).
 
+-export([list2portip/1]).
+
 -include_lib("inets/src/inets_app/inets_internal.hrl").
 
 -include_lib("ftpd_rep.hrl").
@@ -103,6 +105,7 @@ handle_command(<<"PASS">>, [PasswordBin|_], Args) ->
 		{true, _}     -> {response(503, "You are already logged in"), sameargs}
 	end;
 
+
 handle_command(<<"TYPE">>, ParamsBin, Args) ->
 	Params  = [ binary_to_list(E)  || E <- ParamsBin],	%% TEMP
 	ParamsF = [ string:to_upper(E) || E <- Params],
@@ -160,6 +163,30 @@ handle_command(<<"PASV">>, _, Args) ->
 			{response(500, "PASV command failed"), sameargs}
 	end;
 
+handle_command(<<"PORT">>, [BinArg1], Args) ->
+	Params = binary_to_list(BinArg1),
+	IpPortParams = string:tokens(Params,","),
+
+	case list2portip(IpPortParams) of
+		{Addr, Port} ->	%% TODO NOT passpid
+			ftpd_data_conn:reinit_active_conn(Args#ctrl_conn_data.pasv_pid),
+			case ftpd_data_conn:start_active_mode(inet4, Addr, Port) of
+				{ok, PasvPid} ->
+					io:format("Active mode start, port: ~p\n", [Port]),
+					NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
+					{response(200, "PORT command successful"), {newargs, NewArgs}};
+				{error, Error} ->
+					{response(500, "PORT command failed (1)"), sameargs}					
+			end;
+		{error, Error} ->
+			io:format("ERROR: ~p\n", [Error]),
+			{response(500, "PORT command failed (2)"), sameargs}
+	end;
+
+handle_command(<<"PORT">>, _, _) ->
+	{response(501, "Illegal PORT command"), sameargs};
+
+
 handle_command(<<"EPSV">>, _, Args) ->
 	ftpd_data_conn:reinit_passive_conn(Args#ctrl_conn_data.pasv_pid),
 	{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet6),
@@ -167,10 +194,29 @@ handle_command(<<"EPSV">>, _, Args) ->
 	NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
 	{response(229, "Entering Extended Passive Mode (|||" ++ integer_to_list(Port) ++ "|)"), {newargs, NewArgs}};
 
-handle_command(<<"PORT">>, [_Address], _) ->
-	{response(500, "TODO"), sameargs};
+%%
+%%	format : EPRT<space><d><net-prt><d><net-addr><d><tcp-port><d>
+%%
+handle_command(<<"EPRT">>, [BinArg1], Args) ->
+	Params = binary_to_list(BinArg1),
+	IpPortParams = string:tokens(Params,"|"),
+	case eprtlist2portip(IpPortParams) of
+		{Addr, Port} ->	%% TODO NOT passpid
+			ftpd_data_conn:reinit_active_conn(Args#ctrl_conn_data.pasv_pid),
+			case ftpd_data_conn:start_active_mode(inet6, Addr, Port) of
+				{ok, PasvPid} ->
+					io:format("Active mode start, port: ~p\n", [Port]),
+					NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
+					{response(200, "EPRT command successful"), {newargs, NewArgs}};
+				{error, Error} ->
+					{response(500, "EPRT command failed (1)"), sameargs}					
+			end;
+		{error, Error} ->
+			io:format("ERROR: ~p\n", [Error]),
+			{response(500, "EPRT command failed (2)"), sameargs}
+	end;
 
-handle_command(<<"PORT">>, _, _) ->
+handle_command(<<"EPRT">>, _, _) ->
 	{response(501, "Illegal PORT command"), sameargs};
 
 handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
@@ -278,4 +324,27 @@ check_auth(Command, Args) ->
 		{true, false} -> bad;
 		_             -> ok
 	end.
+%%
+%% Conversion between string list and IP/Port tuple
+list2portip(Lst) when length(Lst) == 6 ->
+	Fun = fun(A) -> {Res,More} = string:to_integer(A), Res end,	
+	[A1,A2,A3,A4,P1,P2] = [ Fun(X) || X <- Lst ],
+	case lists:member(error,[A1,A2,A3,A4,P1,P2]) of
+		false ->
+			<<Port:16>> = <<P1:8, P2:8>>,
+			{{A1,A2,A3,A4},Port};
+		true ->
+			{error, bad_addr}				
+	end;
+list2portip(_) ->
+	{error, bad_addr}.
 
+eprtlist2portip([Tp,SAddr,SPort]) when ((Tp == "1") or (Tp == "2")) ->
+	case {inet_parse:address(SAddr),string:to_integer(SPort)} of
+		{{ok,IP},{Port,[]}} -> {IP,Port};
+		Error				-> {error, bad_addr}
+	end;
+
+eprtlist2portip(_) ->
+	{error, bad_addr}
+.

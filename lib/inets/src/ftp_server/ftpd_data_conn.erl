@@ -1,13 +1,25 @@
 -module(ftpd_data_conn).
 
--export([start_passive_mode/1, pasv_accept/1]).
--export([reinit_passive_conn/1,send_msg/3]).
+-export([start_passive_mode/1, start_active_mode/3, pasv_accept/1, actv_accept/1]).
+-export([reinit_passive_conn/1, reinit_active_conn/1, send_msg/3]).
 
 -include_lib("ftpd_rep.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Passive mode
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_active_mode(Ipv,Addr,Port) ->
+	io:format("PORT start\n"),
+	Opts =
+		case Ipv of
+			inet4 -> [binary, {packet, 0}, {active, false}];
+			inet6 -> [binary, {packet, 0}, {active, false}, inet6]
+		end,
+	case gen_tcp:connect(Addr, Port, Opts) of %% TODO error handling
+		{ok, Sock} -> {ok, spawn(?MODULE, actv_accept, [Sock])};
+		Error -> Error
+	end.
 
 start_passive_mode(Ipv) ->
 	io:format("PASV start\n"), 
@@ -25,6 +37,9 @@ reinit_passive_conn(none) ->
 reinit_passive_conn(LastPid) ->
 	exit(LastPid,shutdown).
 
+reinit_active_conn(LastPid) ->
+	reinit_passive_conn(LastPid).
+
 send_msg(MsgType,Msg,State) ->
 	case State#ctrl_conn_data.pasv_pid of
 		none ->
@@ -33,6 +48,10 @@ send_msg(MsgType,Msg,State) ->
 			PasvPid ! {MsgType, Msg, State}, %% TODO response msg
 			{ftpd_ctrl_conn:response(150, "Opening ASCII mode data connection"), sameargs}
 	end.
+
+actv_accept(DataSock) ->
+	io:format("ACTV accept start\n"), 
+	pasv_send_loop(DataSock).
 
 pasv_accept(LSock) ->
 	io:format("PASV accept start\n"), 
