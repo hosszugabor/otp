@@ -299,7 +299,7 @@ ls_empty_dir_test(suite) ->
 ls_empty_dir_test(Config) ->
     Ftp = ?config(ftp_pid, Config),
     {ok, LsEmpty} = ftp:ls(Ftp, "empty_dir"),
-    []=re:split(LsEmpty, "\\r\\n", [trim]).
+    [<<>>]=re:split(LsEmpty, "\\r\\n", [trim]).
 
 nlist_test(doc) ->
     ["Test that the user can list the files from the current directory"];
