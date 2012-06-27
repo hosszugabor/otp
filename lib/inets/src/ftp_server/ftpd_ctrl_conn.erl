@@ -119,6 +119,12 @@ handle_command(<<"RETR">>, ParamsBin, Args) ->
 	FileName = string:join(Params, " "),
 	ftpd_data_conn:send_msg(retr, FileName, Args);
 
+handle_command(<<"STOR">>, ParamsBin, Args) ->
+	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
+	FullName = string:join(Params, " "),
+	FileName = filename:basename(FullName) ++ filename:extension(FullName),
+	ftpd_data_conn:send_msg(stor, FileName, Args);
+
 handle_command(<<"CWD">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
 	NewDir = string:join(Params, " "),
