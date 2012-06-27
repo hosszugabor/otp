@@ -27,6 +27,7 @@
 %% Defines
 
 -define(UTIL, ftpd_util).
+-define(RESP(Comm, Msg), ?UTIL:response(Comm, Msg)).
 
 %% Types
 

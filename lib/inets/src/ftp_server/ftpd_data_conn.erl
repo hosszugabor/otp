@@ -1,7 +1,7 @@
 -module(ftpd_data_conn).
 
--export([start_passive_mode/1, pasv_accept/1]).
--export([reinit_passive_conn/1,send_msg/3]).
+-export([start_passive_mode/1, start_active_mode/3, pasv_accept/1, actv_accept/1]).
+-export([reinit_passive_conn/1, reinit_active_conn/1, send_msg/3]).
 
 -include_lib("inets/include/ftpd.hrl").
 -include_lib("ftpd_rep.hrl").
@@ -9,6 +9,18 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Passive mode
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_active_mode(Ipv,Addr,Port) ->
+	io:format("PORT start\n"),
+	Opts =
+		case Ipv of
+			inet4 -> [binary, {packet, 0}, {active, false}];
+			inet6 -> [binary, {packet, 0}, {active, false}, inet6]
+		end,
+	case gen_tcp:connect(Addr, Port, Opts) of %% TODO error handling
+		{ok, Sock} -> {ok, spawn_link(?MODULE, actv_accept, [Sock])};
+		Error -> Error
+	end.
 
 start_passive_mode(Ipv) ->
 	io:format("PASV start\n"), 
@@ -18,7 +30,7 @@ start_passive_mode(Ipv) ->
 			inet6 -> [binary, {packet, 0}, {active, false}, inet6]
 		end,
 	{ok, LSock} = gen_tcp:listen(0, SockArgs),
-	Pid = spawn(?MODULE, pasv_accept, [LSock]),
+	Pid = spawn_link(?MODULE, pasv_accept, [LSock]),
 	{Pid, inet:port(LSock)}.
 
 reinit_passive_conn(none) ->
@@ -26,14 +38,21 @@ reinit_passive_conn(none) ->
 reinit_passive_conn(LastPid) ->
 	exit(LastPid,shutdown).
 
+reinit_active_conn(LastPid) ->
+	reinit_passive_conn(LastPid).
+
 send_msg(MsgType,Msg,State) ->
 	case State#ctrl_conn_data.pasv_pid of
 		none ->
-			{?UTIL:response(500, "Data connection not established."), sameargs};
+			{?RESP(500, "Data connection not established."), sameargs};
 		PasvPid ->
 			PasvPid ! {MsgType, Msg, State}, %% TODO response msg
-			{?UTIL:response(150, "Opening ASCII mode data connection"), sameargs}
+			{?RESP(150, "Opening ASCII mode data connection"), sameargs}
 	end.
+
+actv_accept(DataSock) ->
+	io:format("ACTV accept start\n"), 
+	pasv_send_loop(DataSock).
 
 pasv_accept(LSock) ->
 	io:format("PASV accept start\n"), 

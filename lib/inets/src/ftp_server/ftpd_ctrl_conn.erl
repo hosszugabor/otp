@@ -54,7 +54,7 @@ process_message(Sock, Command, Msg, Args) ->
 				sameargs           -> Args
 			end;
 		bad ->
-			handle_reply(Sock, ?UTIL:response(530, "Please login with USER and PASS")),
+			handle_reply(Sock, ?RESP(530, "Please login with USER and PASS")),
 			Args
 	end.
 
@@ -64,21 +64,21 @@ process_message(Sock, Command, Msg, Args) ->
 
 -spec handle_command(Command :: string(), Message :: list(), Args :: connstate()) -> {reply(), argschange()}.
 handle_command(<<"NOOP">>, _, _) ->
-	{?UTIL:response(200, "NOOP command successful"), sameargs};
+	{?RESP(200, "NOOP command successful"), sameargs};
 
 handle_command(<<"QUIT">>, _, Args) ->
 	User = Args#ctrl_conn_data.username,
 	?UTIL:logf(Args, ?CONN_CLOSE, [User]),
-	{?UTIL:response(221, "Goodbye."), sameargs};
+	{?RESP(221, "Goodbye."), sameargs};
 
 handle_command(<<"USER">>, [UserBin|_], Args) ->
 	User = binary_to_list(UserBin),
 	case Args#ctrl_conn_data.authed of
 		true -> 
-			{?UTIL:response(503, "You are already logged in"), sameargs};
+			{?RESP(503, "You are already logged in"), sameargs};
 		false ->
 			NewArgs = Args#ctrl_conn_data{ username = User },
-			{?UTIL:response(331, "Password required for " ++ User), {newargs, NewArgs}}
+			{?RESP(331, "Password required for " ++ User), {newargs, NewArgs}}
 	end;
 
 handle_command(<<"PASS">>, [PasswordBin|_], Args) ->
@@ -86,21 +86,22 @@ handle_command(<<"PASS">>, [PasswordBin|_], Args) ->
 	User   = Args#ctrl_conn_data.username,
 	Password = binary_to_list(PasswordBin),
 	case {Authed, User} of
-		{false, none} -> {?UTIL:response(503, "Login with USER first"),     sameargs};
+		{false, none} -> {?RESP(503, "Login with USER first"),     sameargs};
 		{false, _} ->
 			PwdFun = Args#ctrl_conn_data.pwd_fun,
 			case PwdFun(User, Password) of
 				authorized ->
 					?UTIL:logf(Args, ?LOGIN_OK, [User]),
 					NewArgs = Args#ctrl_conn_data{ authed = true },
-					{?UTIL:response(230, "Login ok - TODO: not sure"), {newargs, NewArgs}};
+					{?RESP(230, "Login ok - TODO: not sure"), {newargs, NewArgs}};
 				not_authorized ->
 					?UTIL:logf(Args, ?LOGIN_FAIL, [User]),
 					NewArgs = Args#ctrl_conn_data{ username = none },
-					{?UTIL:response(530, "Login incorrect"), {newargs, NewArgs}}
+					{?RESP(530, "Login incorrect"), {newargs, NewArgs}}
 			end;
-		{true, _}     -> {?UTIL:response(503, "You are already logged in"), sameargs}
+		{true, _}     -> {?RESP(503, "You are already logged in"), sameargs}
 	end;
+
 
 handle_command(<<"TYPE">>, ParamsBin, Args) ->
 	Params  = [ binary_to_list(E)  || E <- ParamsBin],	%% TEMP
@@ -108,9 +109,9 @@ handle_command(<<"TYPE">>, ParamsBin, Args) ->
 	case ?UTIL:check_repr_type(ParamsF) of
 		true ->
 			NewArgs = Args#ctrl_conn_data{ repr_type = ParamsF },
-			{?UTIL:response(200, "TYPE set to " ++ hd(ParamsF)), {newargs, NewArgs}};
+			{?RESP(200, "TYPE set to " ++ hd(ParamsF)), {newargs, NewArgs}};
 		false ->
-			{?UTIL:response(500, "'TYPE " ++ string:join(Params, " ") ++ "' not understood"), sameargs}
+			{?RESP(500, "'TYPE " ++ string:join(Params, " ") ++ "' not understood"), sameargs}
 	end;
 
 handle_command(<<"RETR">>, ParamsBin, Args) ->
@@ -134,17 +135,17 @@ handle_command(<<"CWD">>, ParamsBin, Args) ->
 			?UTIL:tracef(Args, ?CWD, [NewPath -- "/"]),
 			io:format("CWD new path: ~p", [NewPath]),
 			NewArgs = Args#ctrl_conn_data{ curr_path = NewPath },
-			{?UTIL:response(250, "CWD command successful."), {newargs, NewArgs}};
+			{?RESP(250, "CWD command successful."), {newargs, NewArgs}};
 		{error, Error} ->
 			io:format("CWD error: ~p", [Error]),
-			{?UTIL:response(550, NewDir ++ ": No such file or directory"), sameargs}
+			{?RESP(550, NewDir ++ ": No such file or directory"), sameargs}
 	end;
 
 handle_command(<<"PWD">>, [], Args) ->
-	{?UTIL:response(257, "\"" ++ Args#ctrl_conn_data.curr_path ++ "\" is the current directory"), sameargs};
+	{?RESP(257, "\"" ++ Args#ctrl_conn_data.curr_path ++ "\" is the current directory"), sameargs};
 
 handle_command(<<"PWD">>, _, _) ->	% TODO: generalize
-	{?UTIL:response(501, "Invalid number of arguments"), sameargs};
+	{?RESP(501, "Invalid number of arguments"), sameargs};
 
 handle_command(<<"PASV">>, _, Args) ->
 	{ok, Hostname} = inet:gethostname(),
@@ -154,24 +155,66 @@ handle_command(<<"PASV">>, _, Args) ->
 			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet4),
 			io:format("Passive mode start, port: ~p\n", [Port]),
 			NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
-			{?UTIL:response(227, "Entering Passive Mode (" ++ ?UTIL:format_address(Address, Port) ++ ")."), {newargs, NewArgs}};
+			{?RESP(227, "Entering Passive Mode (" ++ ?UTIL:format_address(Address, Port) ++ ")."), {newargs, NewArgs}};
 		{error, Error} ->
 			io:format("ERROR: inet:getaddr, ~p\n", [Error]),
-			{?UTIL:response(500, "PASV command failed"), sameargs}
+			{?RESP(500, "PASV command failed"), sameargs}
 	end;
+
+handle_command(<<"PORT">>, [BinArg1], Args) ->
+	Params = binary_to_list(BinArg1),
+	IpPortParams = string:tokens(Params,","),
+
+	case ?UTIL:list2portip(IpPortParams) of
+		{error, Error} ->
+			io:format("ERROR: ~p\n", [Error]),
+			{?RESP(500, "PORT command failed (2)"), sameargs};
+		{Addr, Port} ->	%% TODO NOT passpid
+			ftpd_data_conn:reinit_active_conn(Args#ctrl_conn_data.pasv_pid),
+			case ftpd_data_conn:start_active_mode(inet4, Addr, Port) of
+				{ok, PasvPid} ->
+					io:format("Active mode start, port: ~p\n", [Port]),
+					NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
+					{?RESP(200, "PORT command successful"), {newargs, NewArgs}};
+				{error, Error} ->
+					{?RESP(500, "PORT command failed (1)"), sameargs}					
+			end
+	end;
+
+handle_command(<<"PORT">>, _, _) ->
+	{?RESP(501, "Illegal PORT command"), sameargs};
 
 handle_command(<<"EPSV">>, _, Args) ->
 	ftpd_data_conn:reinit_passive_conn(Args#ctrl_conn_data.pasv_pid),
 	{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet6),
 	io:format("Passive mode start, port: ~p\n", [Port]),
 	NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
-	{?UTIL:response(229, "Entering Extended Passive Mode (|||" ++ integer_to_list(Port) ++ "|)"), {newargs, NewArgs}};
+	{?RESP(229, "Entering Extended Passive Mode (|||" ++ integer_to_list(Port) ++ "|)"), {newargs, NewArgs}};
 
-handle_command(<<"PORT">>, [_Address], _) ->
-	{?UTIL:response(500, "TODO"), sameargs};
+%%
+%%	format : EPRT<space><d><net-prt><d><net-addr><d><tcp-port><d>
+%%
+handle_command(<<"EPRT">>, [BinArg1], Args) ->
+	Params = binary_to_list(BinArg1),
+	IpPortParams = string:tokens(Params,"|"),
+	case ?UTIL:eprtlist2portip(IpPortParams) of
+		{error, Error} ->
+			io:format("ERROR: ~p\n", [Error]),
+			{?RESP(500, "EPRT command failed (2)"), sameargs};
+		{Addr, Port} ->	%% TODO NOT passpid
+			ftpd_data_conn:reinit_active_conn(Args#ctrl_conn_data.pasv_pid),
+			case ftpd_data_conn:start_active_mode(inet6, Addr, Port) of
+				{ok, PasvPid} ->
+					io:format("Active mode start, port: ~p\n", [Port]),
+					NewArgs = Args#ctrl_conn_data{ pasv_pid = PasvPid },
+					{?RESP(200, "EPRT command successful"), {newargs, NewArgs}};
+				{error, Error} ->
+					{?RESP(500, "EPRT command failed (1)"), sameargs}					
+			end
+	end;
 
-handle_command(<<"PORT">>, _, _) ->
-	{?UTIL:response(501, "Illegal PORT command"), sameargs};
+handle_command(<<"EPRT">>, _, _) ->
+	{?RESP(501, "Illegal PORT command"), sameargs};
 
 handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
@@ -188,14 +231,14 @@ handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
 		{error, Error} ->
 			io:format("LIST error: ~p  | ~p | ~p | ~p | ~p\n", 
 									[Error,Params,DirToList,AbsPath,RelPath]),
-			{?UTIL:response(550, "LIST fail TEMP TODO"), sameargs}
+			{?RESP(550, "LIST fail TEMP TODO"), sameargs}
 	end;
 
 handle_command(<<"">>, _, _) ->
-	{?UTIL:response(500, "Invalid command: try being more creative"), sameargs};
+	{?RESP(500, "Invalid command: try being more creative"), sameargs};
 
 handle_command(Command, _, _) ->
-	{?UTIL:response(500, binary_to_list(Command) ++ " not implemented"), sameargs}.
+	{?RESP(500, binary_to_list(Command) ++ " not implemented"), sameargs}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Control functions
