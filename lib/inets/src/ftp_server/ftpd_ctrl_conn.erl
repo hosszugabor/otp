@@ -296,7 +296,6 @@ handle_command(<<"RNTO">>, ParamsBin, Args) ->
 		none ->
 			{?RESP(550, "RNTO command failed (1)"), sameargs};
 		FromPath ->
-			TransFun = fun(F) -> case file_lib:is_dir(F) of true -> F ++ "/";
 			io:format("From: ~p || To: ~p", [FromPath, ToPath]),
 			case file:rename(FromPath, ToPath) of
 				ok ->
