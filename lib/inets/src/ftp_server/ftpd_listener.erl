@@ -78,21 +78,17 @@ get_port(Args) ->
 	end.
 
 
-handle_call(info, From, {Port, Args, LSock}) ->
+handle_call(info, _From, {Port, Args, LSock}) ->
 	NewArgs = 
-	case proplists:lookup(bind_address, Args) of
-		none ->
-			[{bind_address, localhost} | Args];
-		_ ->
-			Args;			
-	end,
+		case proplists:lookup(bind_address, Args) of
+			none -> [{bind_address, localhost} | Args];
+			_    -> Args
+		end,
 	Reply = 
-	case proplists:lookup(port, NewArgs) of
-		none ->
-			[{port, Port}, BindAddress];
-		_ ->
-			NewArgs
-	end,
+		case proplists:lookup(port, NewArgs) of
+			none -> [{port, Port} | NewArgs];
+			_    -> NewArgs
+		end,
 	{reply, Reply, {Port, Args, LSock}};
 handle_call(info, _From, State) -> {noreply, State}.
 

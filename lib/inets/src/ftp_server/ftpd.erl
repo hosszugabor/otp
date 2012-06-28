@@ -78,7 +78,7 @@ service_info(Pid) ->
 	    {error, service_not_available} 
     end.
 
-get_child_info(Pid, Children)
+get_child_info(Pid, Children) ->
 	case lists:member(Pid, Children) of 
 		true ->
 			{ok, ftpd_listener:info(Pid)};
