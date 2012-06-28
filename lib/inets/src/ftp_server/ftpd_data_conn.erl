@@ -70,6 +70,11 @@ pasv_send_loop(DataSock) ->
 			FormattedMsg = string:join(TempMsg, "\r\n"),
 			gen_tcp:send(DataSock, FormattedMsg),
 			transfer_complete(Args);
+		{nlst, {FileNames, _}, Args} ->
+			io:format("NLST send list data\n"),
+			FormattedMsg = string:join(FileNames, "\r\n"),
+			gen_tcp:send(DataSock, FormattedMsg),
+			transfer_complete(Args);
 		{retr, FileName, Args} ->
 			AbsPath = Args#ctrl_conn_data.chrootdir,
 			RelPath = Args#ctrl_conn_data.curr_path,
@@ -101,7 +106,7 @@ pasv_send_loop(DataSock) ->
 	gen_tcp:close(DataSock).
 
 
-%%	Nothing more just wrapper for gen_tcp:recv
+%%	Receive binaries and store them in a file
 %%	
 receive_and_store(DataSock,FPath) ->
 	{ok, Id} = file:open(FPath,[append,binary]),

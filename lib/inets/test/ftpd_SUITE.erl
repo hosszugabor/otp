@@ -309,7 +309,7 @@ nlist_test(Config) ->
     Ftp = ?config(ftp_pid, Config),
     {ok, LsRoot} = ftp:nlist(Ftp),
     Lst=re:split(LsRoot, "\\r\\n", [trim]),
-    ["dir", "empty", "empty_dir"] = Lst.
+    [<<"dir">>, <<"empty">>, <<"empty_dir">>] = Lst.
 
 cd_test(doc) ->
     ["Test that the user can change a directory"];
