@@ -64,15 +64,15 @@ pasv_accept(LSock) ->
 pasv_send_loop(DataSock) ->
 	io:format("PASV send loop\n"), 
     receive
-		{list, {FileNames, FullPath}, Args} ->
+		{list, {FileNames, FullPath, ListType}, Args} ->
 			io:format("PASV send LIST data\n"),
-			TempMsg      = [ ?UTIL:get_file_info(FName,FullPath) || FName <- FileNames],
-			FormattedMsg = string:join(TempMsg, "\r\n"),
-			gen_tcp:send(DataSock, FormattedMsg),
-			transfer_complete(Args);
-		{nlst, {FileNames, _}, Args} ->
-			io:format("NLST send list data\n"),
-			FormattedMsg = string:join(FileNames, "\r\n"),
+			FormattedMsg =
+				case ListType of
+					lst -> 	TempMsg      = [ ?UTIL:get_file_info(FName,FullPath) || FName <- FileNames],
+							string:join(TempMsg, "\r\n");
+					nlst ->
+							string:join(FileNames, "\r\n")
+				end,
 			gen_tcp:send(DataSock, FormattedMsg),
 			transfer_complete(Args);
 		{retr, FileName, Args} ->
@@ -89,7 +89,7 @@ pasv_send_loop(DataSock) ->
 								"Requested action not taken. File unavailable, not found, not accessible"),
 					io:format("File error: ~p, ~p\n",[Reason,FPath])	
 			end;
-		{stor, {FileName, FullClientName}, Args} ->
+		{stor, {FileName, FullClientName, StrType}, Args} ->
 			AbsPath = Args#ctrl_conn_data.chrootdir, %% TODO duplicated code here and before, solution: make_filepath fun
 			RelPath = Args#ctrl_conn_data.curr_path,
 			FPath   = AbsPath ++ "/" ++ RelPath ++ "/" ++ FileName,
