@@ -1,3 +1,23 @@
+%%
+%% %CopyrightBegin%
+%%
+%% Copyright Ericsson AB 2012. All Rights Reserved.
+%%
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%%
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%%
+%% %CopyrightEnd%
+%%
+%%
+
 -module(ftpd_ctrl_conn).
 
 -export([new_connection/3]).
@@ -26,10 +46,11 @@ construct_conn_data(Args, Sock) ->
 	ErlTop = element(2,file:get_cwd()),
 	#ctrl_conn_data{
 		control_socket = Sock, 
-		chrootdir      = proplists:get_value(chrootDir, Args, ErlTop), %% HINT chrootDir vs chrootdir
-		pwd_fun        = proplists:get_value(pwd_fun,   Args, fun(_,_) -> not_authorized end),
-		log_fun        = proplists:get_value(log_fun,   Args, fun(_,_) -> ok end),
-		trace_fun      = proplists:get_value(trace_fun, Args, fun(_,_) -> ok end)
+		chrootdir = proplists:get_value(chrootDir, Args, ErlTop),
+		pwd_fun   = proplists:get_value(pwd_fun,   Args,
+						fun(_,_) -> not_authorized end),
+		log_fun   = proplists:get_value(log_fun,   Args, fun(_,_) -> ok end),
+		trace_fun = proplists:get_value(trace_fun, Args, fun(_,_) -> ok end)
 	}.
 
 %% Control Connection - Wait for incoming messages
@@ -62,7 +83,8 @@ process_message(Sock, Command, Msg, Args) ->
 %% Handle incoming FTP commands
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec handle_command(Command :: string(), Message :: list(), Args :: connstate()) -> {reply(), argschange()}.
+-spec handle_command(Command :: bitstring(), Message :: list(),
+	Args :: connstate()) -> {reply(), argschange()}.
 handle_command(<<"NOOP">>, _, _) ->
 	{?RESP(200, "NOOP command successful"), sameargs};
 
@@ -86,20 +108,20 @@ handle_command(<<"PASS">>, [PasswordBin|_], Args) ->
 	User   = Args#ctrl_conn_data.username,
 	Password = binary_to_list(PasswordBin),
 	case {Authed, User} of
-		{false, none} -> {?RESP(503, "Login with USER first"),     sameargs};
+		{false, none} -> {?RESP(503, "Login with USER first"), sameargs};
 		{false, _} ->
 			PwdFun = Args#ctrl_conn_data.pwd_fun,
 			case PwdFun(User, Password) of
 				authorized ->
 					?UTIL:logf(Args, ?LOGIN_OK, [User]),
 					NewArgs = Args#ctrl_conn_data{ authed = true },
-					{?RESP(230, "Login ok - TODO: not sure"), {newargs, NewArgs}};
+					{?RESP(230, "User logged in, proceed."),{newargs, NewArgs}};
 				not_authorized ->
 					?UTIL:logf(Args, ?LOGIN_FAIL, [User]),
 					NewArgs = Args#ctrl_conn_data{ username = none },
 					{?RESP(530, "Login incorrect"), {newargs, NewArgs}}
 			end;
-		{true, _}     -> {?RESP(503, "You are already logged in"), sameargs}
+		{true, _} -> {?RESP(503, "You are already logged in"), sameargs}
 	end;
 
 
@@ -111,12 +133,12 @@ handle_command(<<"TYPE">>, ParamsBin, Args) ->
 			NewArgs = Args#ctrl_conn_data{ repr_type = ParamsF },
 			{?RESP(200, "TYPE set to " ++ hd(ParamsF)), {newargs, NewArgs}};
 		false ->
-			{?RESP(500, "'TYPE " ++ string:join(Params, " ") ++ "' not understood"), sameargs}
+			RspStr = "'TYPE " ++ string:join(Params, " ") ++ "' not understood",
+			{?RESP(500, RspStr), sameargs}
 	end;
 
 handle_command(<<"SIZE">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
-	FileName = string:join(Params, " "),
+	FileName = ?UTIL:binlist_to_string(ParamsBin),
 	CurDir = Args#ctrl_conn_data.curr_path,
 	BaseDir = Args#ctrl_conn_data.chrootdir,
 	FullPath = BaseDir ++ "/" ++ CurDir ++ FileName,
@@ -129,25 +151,21 @@ handle_command(<<"SIZE">>, ParamsBin, Args) ->
 
 
 handle_command(<<"RETR">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
-	FileName = string:join(Params, " "),
+	FileName = ?UTIL:binlist_to_string(ParamsBin),
 	ftpd_data_conn:send_msg(retr, FileName, Args);
 
 handle_command(<<"STOR">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
-	FullName = string:join(Params, " "),
+	FullName = ?UTIL:binlist_to_string(ParamsBin),
 	FileName = filename:basename(FullName) ++ filename:extension(FullName),
 	ftpd_data_conn:send_msg(stor, {FileName, FullName, write}, Args);
 
 handle_command(<<"APPE">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
-	FullName = string:join(Params, " "),
+	FullName = ?UTIL:binlist_to_string(ParamsBin),
 	FileName = filename:basename(FullName) ++ filename:extension(FullName),
 	ftpd_data_conn:send_msg(stor, {FileName, FullName, append}, Args);
 
 handle_command(<<"CWD">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
-	NewDir = string:join(Params, " "),
+	NewDir = ?UTIL:binlist_to_string(ParamsBin),
 	CurDir = Args#ctrl_conn_data.curr_path,
 	BaseDir = Args#ctrl_conn_data.chrootdir,
 	case ftpd_dir:set_cwd(BaseDir, CurDir, NewDir) of
@@ -168,7 +186,8 @@ handle_command(<<"CWD">>, ParamsBin, Args) ->
 	end;
 
 handle_command(<<"PWD">>, [], Args) ->
-	{?RESP(257, "\"" ++ Args#ctrl_conn_data.curr_path ++ "\" is the current directory"), sameargs};
+	RspStr = "\""++Args#ctrl_conn_data.curr_path++"\" is the current directory",
+	{?RESP(257, RspStr), sameargs};
 
 handle_command(<<"PWD">>, _, _) ->	% TODO: generalize
 	{?RESP(501, "Invalid number of arguments"), sameargs};
@@ -187,7 +206,9 @@ handle_command(<<"PASV">>, _, Args) ->
 			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet4),
 			io:format("Passive mode start, port: ~p\n", [Port]),
 			NewArgs = Args#ctrl_conn_data{ data_pid = PasvPid },
-			{?RESP(227, "Entering Passive Mode (" ++ ?UTIL:format_address(Address, Port) ++ ")."), {newargs, NewArgs}};
+			AddrStr = ?UTIL:format_address(Address, Port),
+			RespStr = "Entering Passive Mode (" ++ AddrStr ++ ").",
+			{?RESP(227, RespStr), {newargs, NewArgs}};
 		{error, Error} ->
 			io:format("ERROR: inet:getaddr, ~p\n", [Error]),
 			{?RESP(500, "PASV command failed"), sameargs}
@@ -208,7 +229,7 @@ handle_command(<<"PORT">>, [BinArg1], Args) ->
 					io:format("Active mode start, port: ~p\n", [Port]),
 					NewArgs = Args#ctrl_conn_data{ data_pid = PasvPid },
 					{?RESP(200, "PORT command successful"), {newargs, NewArgs}};
-				{error, Error} ->
+				{error, _Error} ->
 					{?RESP(500, "PORT command failed (1)"), sameargs}					
 			end
 	end;
@@ -221,7 +242,8 @@ handle_command(<<"EPSV">>, _, Args) ->
 	{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet6),
 	io:format("Passive mode start, port: ~p\n", [Port]),
 	NewArgs = Args#ctrl_conn_data{ data_pid = PasvPid },
-	{?RESP(229, "Entering Extended Passive Mode (|||" ++ integer_to_list(Port) ++ "|)"), {newargs, NewArgs}};
+	RspStr = "Entering Extended Passive Mode (|||"++integer_to_list(Port)++"|)",
+	{?RESP(229, RspStr), {newargs, NewArgs}};
 
 %%
 %%	format : EPRT<space><d><net-prt><d><net-addr><d><tcp-port><d>
@@ -240,7 +262,7 @@ handle_command(<<"EPRT">>, [BinArg1], Args) ->
 					io:format("Active mode start, port: ~p\n", [Port]),
 					NewArgs = Args#ctrl_conn_data{ data_pid = PasvPid },
 					{?RESP(200, "EPRT command successful"), {newargs, NewArgs}};
-				{error, Error} ->
+				{error, _Error} ->
 					{?RESP(500, "EPRT command failed (1)"), sameargs}					
 			end
 	end;
@@ -248,9 +270,8 @@ handle_command(<<"EPRT">>, [BinArg1], Args) ->
 handle_command(<<"EPRT">>, _, _) ->
 	{?RESP(501, "Illegal PORT command"), sameargs};
 
-handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
-	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
-	DirToList = string:join(Params, " "),
+handle_command(<<"LIST">>, ParamsBin, Args) ->
+	DirToList = ?UTIL:binlist_to_string(ParamsBin),
 	AbsPath = Args#ctrl_conn_data.chrootdir,
 	RelPath = Args#ctrl_conn_data.curr_path,
 	case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
@@ -259,24 +280,25 @@ handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
 			FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
 			io:format("LIST path: ~p\n", [FullPath]),
 			{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-			ftpd_data_conn:send_msg(list, {lists:sort(FileNames), FullPath, lst}, Args);
+			MsgParam = {lists:sort(FileNames), FullPath, lst},
+			ftpd_data_conn:send_msg(list, MsgParam, Args);
 		{error, Error} ->
 			io:format("LIST error: ~p  | ~p | ~p | ~p | ~p\n", 
-									[Error,Params,DirToList,AbsPath,RelPath]),
+								[Error,ParamsBin,DirToList,AbsPath,RelPath]),
 			{?RESP(550, "LIST fail TEMP TODO"), sameargs}
 	end;
 
 handle_command(<<"NLST">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
-	DirToList = string:join(Params, " "),
+	DirToList = ?UTIL:binlist_to_string(ParamsBin),
 	AbsPath = Args#ctrl_conn_data.chrootdir,
 	RelPath = Args#ctrl_conn_data.curr_path,
 	case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
 		{ok, NewPath} ->
 			io:format("NLST path ~p \n", [NewPath]),
 			{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-			ftpd_data_conn:send_msg(list, {lists:sort(FileNames), "", nlst}, Args);
-		{error, Error} ->
+			MsgParam = {lists:sort(FileNames), "", nlst},
+			ftpd_data_conn:send_msg(list, MsgParam, Args);
+		{error, _Error} ->
 			{?RESP(550, "NLST fail TEMP TODO"), sameargs}			
 	end;
 
@@ -286,14 +308,13 @@ handle_command(<<"REIN">>, [], Args) ->
 	{?RESP(200, "REIN command successful"), {newargs, NewArgs}};
 
 handle_command(<<"MKD">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],
-	Dir = string:join(Params, " "),
+	Dir = ?UTIL:binlist_to_string(ParamsBin),
 	AbsPath = Args#ctrl_conn_data.chrootdir,
 	RelPath = Args#ctrl_conn_data.curr_path,
 	FullPath = AbsPath ++ RelPath ++ Dir,
 	case file:make_dir(FullPath) of
 		ok ->
-			{?RESP(257, "\"" ++ RelPath ++ Dir ++ "\" directory created"), sameargs};
+			{?RESP(257, "\""++RelPath++Dir++"\" directory created"), sameargs};
 		{error, eexist} ->
 			{?RESP(550, "Folder already exists"), sameargs};
 		{error, _} ->
@@ -301,8 +322,7 @@ handle_command(<<"MKD">>, ParamsBin, Args) ->
 	end;
 
 handle_command(<<"RMD">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],
-	Dir = string:join(Params, " "),
+	Dir = ?UTIL:binlist_to_string(ParamsBin),
 	AbsPath = Args#ctrl_conn_data.chrootdir,
 	RelPath = Args#ctrl_conn_data.curr_path,
 	FullPath = AbsPath ++ RelPath ++ Dir ++ "/",
@@ -312,8 +332,7 @@ handle_command(<<"RMD">>, ParamsBin, Args) ->
 	end;
 
 handle_command(<<"DELE">>, ParamsBin, Args) ->
-	Params = [ binary_to_list(E) || E <- ParamsBin],
-	Dir = string:join(Params, " "),
+	Dir = ?UTIL:binlist_to_string(ParamsBin),
 	AbsPath = Args#ctrl_conn_data.chrootdir,
 	RelPath = Args#ctrl_conn_data.curr_path,
 	FullPath = AbsPath ++ RelPath ++ Dir,
@@ -323,20 +342,19 @@ handle_command(<<"DELE">>, ParamsBin, Args) ->
 	end;
 
 handle_command(<<"RNFR">>, ParamsBin, Args) ->
-	Params   = [ binary_to_list(E) || E <- ParamsBin],
-	FromName = string:join(Params, " "),
+	FromName = ?UTIL:binlist_to_string(ParamsBin),
 	AbsPath  = Args#ctrl_conn_data.chrootdir,
 	RelPath  = Args#ctrl_conn_data.curr_path,
 	FullPath = AbsPath ++ RelPath ++ FromName,
 	NewArgs = Args#ctrl_conn_data{ rename_from = FullPath },
-	{?RESP(350, "Requested file action pending further information."), {newargs, NewArgs}};
+	RespStr = "Requested file action pending further information.",
+	{?RESP(350, RespStr), {newargs, NewArgs}};
 
 handle_command(<<"RNTO">>, ParamsBin, Args) ->
-	Params   = [ binary_to_list(E) || E <- ParamsBin],
-	ToName = string:join(Params, " "),
-	AbsPath  = Args#ctrl_conn_data.chrootdir,
-	RelPath  = Args#ctrl_conn_data.curr_path,
-	ToPath = AbsPath ++ RelPath ++ ToName,
+	ToName  = ?UTIL:binlist_to_string(ParamsBin),
+	AbsPath = Args#ctrl_conn_data.chrootdir,
+	RelPath = Args#ctrl_conn_data.curr_path,
+	ToPath  = AbsPath ++ RelPath ++ ToName,
 	case Args#ctrl_conn_data.rename_from of
 		none ->
 			{?RESP(550, "RNTO command failed (1)"), sameargs};

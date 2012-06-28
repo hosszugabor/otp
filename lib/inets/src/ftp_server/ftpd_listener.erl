@@ -1,27 +1,48 @@
+%%
+%% %CopyrightBegin%
+%%
+%% Copyright Ericsson AB 2012. All Rights Reserved.
+%%
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%%
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%%
+%% %CopyrightEnd%
+%%
+%%
+
 -module(ftpd_listener).
 
 -behaviour(gen_server).
 
 -export([start_link/1, loop/3]).
--export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3, handle_info/2]).
-
+-export([init/1, handle_call/3, handle_cast/2,
+         terminate/2, code_change/3, handle_info/2]).
 
 loop(LSock, SupPid, Args) ->
 	case gen_tcp:accept(LSock) of
-		{ok, Sock} -> spawn_link(ftpd_ctrl_conn, new_connection, [Sock, SupPid, Args]),
-					  loop(LSock, SupPid, Args);
-		{_, _Res} -> err_tcp
+		{ok, Sock} ->
+			spawn_link(ftpd_ctrl_conn, new_connection, [Sock, SupPid, Args]),
+			loop(LSock, SupPid, Args);
+		{_, _Res} ->
+			err_tcp
 	end.
 
 start_link(Args) ->
-	Reg_name = list_to_atom(lists:append("ftpd_listener_", integer_to_list(get_port(Args)))),
+	Str = lists:append("ftpd_listener_", integer_to_list(get_port(Args))),
+	Reg_name = list_to_atom(Str),
 	gen_server:start_link({local, Reg_name}, ?MODULE, Args, []).
 
 init(Args) ->
 	process_flag(trap_exit, true),
-	
 	Port = get_port(Args), 
-
    	SupPid = proplists:get_value(sup_pid,Args),
 
 	SockArgs =
@@ -41,9 +62,10 @@ init(Args) ->
 				[FdProp | SockArgs]
 		end, 
 
-
-   	 {ok, LSock} = gen_tcp:listen(Port, NewSockArgs),
-    	spawn(?MODULE, loop, [LSock, SupPid, Args]), %% Args also contains SupPid!! TODO
+   	 {ok, LSock} =
+		gen_tcp:listen(Port, NewSockArgs),
+        %% TODO: Args also contains SupPid
+    	spawn(?MODULE, loop, [LSock, SupPid, Args]),
 	{ok, {Port, SupPid, LSock}}.
 
 

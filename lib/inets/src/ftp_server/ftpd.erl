@@ -17,6 +17,7 @@
 %% %CopyrightEnd%
 %%
 %%
+
 -module(ftpd).
 -behaviour(inets_service).
 
@@ -50,7 +51,6 @@ start_standalone(Config) ->
 -spec start_service(Config :: ftp_config()) -> {ok, pid()} | {error, Reason :: term()}.
 start_service(Config) ->
 	ftpd_sup:start_child(Config). 
-
 
 -spec stop_service(Pid :: pid()) -> ok | {error, Reason :: term()}.
 stop_service(Pid) when is_pid(Pid) ->
