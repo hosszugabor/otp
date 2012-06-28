@@ -240,13 +240,24 @@ handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
 			{?RESP(550, "LIST fail TEMP TODO"), sameargs}
 	end;
 
-handle_command(<<"NLST">>, [], Args) ->
+handle_command(<<"NLST">>, ParamsBin, Args) ->
+	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
+	DirToList = string:join(Params, " "),
 	AbsPath = Args#ctrl_conn_data.chrootdir,
 	RelPath = Args#ctrl_conn_data.curr_path,
-	io:format("NLST path \n", []),
-	FullPath = AbsPath ++ "/" ++ RelPath,
-	{ok, FileNames} = file:list_dir(FullPath),
-	ftpd_data_conn:send_msg(nlst, {lists:sort(FileNames), ""}, Args);
+	case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
+		{ok, NewPath} ->
+			io:format("NLST path ~p \n", [NewPath]),
+			{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
+			ftpd_data_conn:send_msg(nlst, {lists:sort(FileNames), ""}, Args);
+		{error, Error} ->
+			{?RESP(550, "NLST fail TEMP TODO"), sameargs}			
+	end;
+
+
+handle_command(<<"REIN">>, [], Args) ->
+	NewArgs = Args#ctrl_conn_data{ authed = false, username = none},
+	{?RESP(200, "REIN command successful"), {newargs, NewArgs}};
 
 handle_command(<<"MKD">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],
