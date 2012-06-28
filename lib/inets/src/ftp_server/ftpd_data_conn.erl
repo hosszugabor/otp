@@ -89,11 +89,11 @@ pasv_send_loop(DataSock) ->
 								"Requested action not taken. File unavailable, not found, not accessible"),
 					io:format("File error: ~p, ~p\n",[Reason,FPath])	
 			end;
-		{stor, {FileName, FullClientName, StrType}, Args} ->
+		{stor, {FileName, FullClientName, Mode}, Args} ->
 			AbsPath = Args#ctrl_conn_data.chrootdir, %% TODO duplicated code here and before, solution: make_filepath fun
 			RelPath = Args#ctrl_conn_data.curr_path,
 			FPath   = AbsPath ++ "/" ++ RelPath ++ "/" ++ FileName,
-			case receive_and_store(DataSock,FPath) of
+			case receive_and_store(DataSock,FPath, Mode) of
 				ok ->
 					?UTIL:tracef(Args, ?STOR, [RelPath ++ "/" ++ FileName, FullClientName]),
 					transfer_complete(Args); 
@@ -108,8 +108,8 @@ pasv_send_loop(DataSock) ->
 
 %%	Receive binaries and store them in a file
 %%	
-receive_and_store(DataSock,FPath) ->
-	{ok, Id} = file:open(FPath,[append,binary]),
+receive_and_store(DataSock,FPath,Mode) ->
+	{ok, Id} = file:open(FPath,[Mode,binary]),
 	case {receive_and_write_chunks(DataSock,Id), file:close(Id)} of
 		{ok, ok} -> ok;
 		_ 		 -> {error, receive_fail}

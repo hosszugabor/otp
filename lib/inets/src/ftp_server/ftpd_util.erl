@@ -3,7 +3,7 @@
 -export([format_address/2, packet_to_tokens/1, check_repr_type/1,
          check_auth/2, response/2, get_file_info/2,
          logf/3, tracef/3,
-         list2portip/1, eprtlist2portip/1]).
+         list2portip/1, eprtlist2portip/1,bin_to_upper/1]).
 
 -include_lib("ftpd_rep.hrl").
 
@@ -26,7 +26,7 @@ packet_to_tokens(Data) ->
 	end.
 %% check for TYPE command arguments
 check_repr_type([Type]) ->
-	lists:member(Type, ["A", "E", "I"]);
+	lists:member(Type, ["I"]);
 check_repr_type(["L", Arg]) ->
 	Arg == "8";
 check_repr_type([_, _]) ->
