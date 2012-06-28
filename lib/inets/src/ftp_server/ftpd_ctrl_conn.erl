@@ -114,6 +114,20 @@ handle_command(<<"TYPE">>, ParamsBin, Args) ->
 			{?RESP(500, "'TYPE " ++ string:join(Params, " ") ++ "' not understood"), sameargs}
 	end;
 
+handle_command(<<"SIZE">>, ParamsBin, Args) ->
+	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
+	FileName = string:join(Params, " "),
+	CurDir = Args#ctrl_conn_data.curr_path,
+	BaseDir = Args#ctrl_conn_data.chrootdir,
+	FullPath = BaseDir ++ "/" ++ CurDir ++ FileName,
+	case filelib:is_regular(FullPath) of
+		true ->	Size = filelib:file_size(FullPath),
+				{?RESP(213, integer_to_list(Size)), sameargs};
+		false ->
+				{?RESP(550, FileName ++ ": not a regular file"), sameargs}
+	end;	
+
+
 handle_command(<<"RETR">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
 	FileName = string:join(Params, " "),
@@ -123,7 +137,7 @@ handle_command(<<"STOR">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
 	FullName = string:join(Params, " "),
 	FileName = filename:basename(FullName) ++ filename:extension(FullName),
-	ftpd_data_conn:send_msg(stor, {FileName, FullName, store}, Args);
+	ftpd_data_conn:send_msg(stor, {FileName, FullName, write}, Args);
 
 handle_command(<<"APPE">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
@@ -158,6 +172,12 @@ handle_command(<<"PWD">>, [], Args) ->
 
 handle_command(<<"PWD">>, _, _) ->	% TODO: generalize
 	{?RESP(501, "Invalid number of arguments"), sameargs};
+
+handle_command(<<"STRU">>, [Type], _) ->
+	case ?UTIL:bin_to_upper(Type) of
+		<<"F">> -> {?RESP(200, "Structure set to F"), sameargs};
+		_		-> {?RESP(504, "Unsupported structure type"), sameargs}
+	end;
 
 handle_command(<<"PASV">>, _, Args) ->
 	{ok, Hostname} = inet:gethostname(),
