@@ -123,7 +123,13 @@ handle_command(<<"STOR">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
 	FullName = string:join(Params, " "),
 	FileName = filename:basename(FullName) ++ filename:extension(FullName),
-	ftpd_data_conn:send_msg(stor, {FileName, FullName}, Args);
+	ftpd_data_conn:send_msg(stor, {FileName, FullName, store}, Args);
+
+handle_command(<<"APPE">>, ParamsBin, Args) ->
+	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
+	FullName = string:join(Params, " "),
+	FileName = filename:basename(FullName) ++ filename:extension(FullName),
+	ftpd_data_conn:send_msg(stor, {FileName, FullName, append}, Args);
 
 handle_command(<<"CWD">>, ParamsBin, Args) ->
 	Params = [ binary_to_list(E) || E <- ParamsBin],	%% TEMP
@@ -233,7 +239,7 @@ handle_command(<<"LIST">>, ParamsBin, Args) -> %% TODO move to data_conn
 			FullPath = AbsPath ++ "/" ++ RelPath ++ DirToList,
 			io:format("LIST path: ~p\n", [FullPath]),
 			{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-			ftpd_data_conn:send_msg(list, {lists:sort(FileNames), FullPath}, Args);
+			ftpd_data_conn:send_msg(list, {lists:sort(FileNames), FullPath, lst}, Args);
 		{error, Error} ->
 			io:format("LIST error: ~p  | ~p | ~p | ~p | ~p\n", 
 									[Error,Params,DirToList,AbsPath,RelPath]),
@@ -249,7 +255,7 @@ handle_command(<<"NLST">>, ParamsBin, Args) ->
 		{ok, NewPath} ->
 			io:format("NLST path ~p \n", [NewPath]),
 			{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-			ftpd_data_conn:send_msg(nlst, {lists:sort(FileNames), ""}, Args);
+			ftpd_data_conn:send_msg(list, {lists:sort(FileNames), "", nlst}, Args);
 		{error, Error} ->
 			{?RESP(550, "NLST fail TEMP TODO"), sameargs}			
 	end;
