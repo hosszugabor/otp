@@ -35,7 +35,7 @@ format_address({A1, A2, A3, A4}, Port) ->
 	lists:concat([A1,",",A2,",",A3,",",A4,",",P1,",",P2]).
 
 bin_to_upper(T) ->
-	<< <<if (X =< 122)and(X >= $a) -> X-32; true -> X end>> || <<X:8>> <= T >>.
+	<< <<if (X=<$z)and(X>=$a) -> X-($a-$A); true -> X end>> || <<X:8>> <= T >>.
 
 binlist_to_string(List) ->
 	StrList = [ binary_to_list(E) || E <- List],
