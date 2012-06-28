@@ -44,7 +44,8 @@
 	 download_test/1,
 	 upload_test/1,
 	 fd_test/1,
-	 log_trace_test/1
+	 log_trace_test/1,
+	 chunk_test/1
 	]).
 
 -define(USER, "test").
@@ -76,7 +77,7 @@ groups() ->
     [{basic_tests, [], [start_stop_test, connect_test, multiple_servers_test, connect_v6_test, fd_test]},
      {login_tests, [], [login_success_test, login_failure_test]},
      {directory_tests, [parallel], [ls_test, ls_dir_test, ls_empty_dir_test, nlist_test, cd_test, pwd_test]},
-     {download_upload_tests, [], [download_test, upload_test]},
+     {download_upload_tests, [], [download_test, upload_test, chunk_test]},
      {ipv6_tests, [], [ls_test, ls_dir_test, ls_empty_dir_test, cd_test, download_test, upload_test]},
      {log_trace_tests, [], [log_trace_test]}
     ].
@@ -423,3 +424,14 @@ ftp_close(Config) ->
     Ftp = ?config(ftp_pid, Config),
     ftp:close(Ftp).
 
+chunk_test(doc) ->
+    ["Test that the user can download files in chunks."];
+chunk_test(suite) ->
+    [];
+chunk_test(Config) ->
+    Ftp = ?config(ftp_pid, Config),
+    PrivDir = ?config(priv_dir, Config),
+    ftp:lcd(Ftp, PrivDir),
+	ok = ftp:recv_chunk_start(Ftp, "dir/123"),
+	{ok, <<"abc\n">>} = ftp:recv_chunk(Ftp),
+	ok = ftp:recv_chunk(Ftp).
