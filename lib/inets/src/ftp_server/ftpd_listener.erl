@@ -22,7 +22,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/1, loop/3]).
+-export([start_link/1, loop/3, info/1]).
 -export([init/1, handle_call/3, handle_cast/2,
          terminate/2, code_change/3, handle_info/2]).
 
@@ -53,7 +53,7 @@ init(Args) ->
 				[binary, {packet, 0}, {active, false}, {ip, Addr}];
 			none ->
 				[binary, {packet, 0}, {active, false}]
-			end,
+		end,
 	NewSockArgs =
 		case proplists:lookup(fd, Args) of
 			none -> SockArgs;
@@ -66,8 +66,10 @@ init(Args) ->
 		gen_tcp:listen(Port, NewSockArgs),
         %% TODO: Args also contains SupPid
     	spawn(?MODULE, loop, [LSock, SupPid, Args]),
-	{ok, {Port, SupPid, LSock}}.
+	{ok, {Port, Args, LSock}}.
 
+info(Pid) ->
+	gen_server:call(Pid, info).
 
 get_port(Args) ->
 	case proplists:lookup(port,Args) of
@@ -76,7 +78,24 @@ get_port(Args) ->
 	end.
 
 
-handle_call(_Req, _From, State) -> {noreply, State}.
+handle_call(info, From, {Port, Args, LSock}) ->
+	NewArgs = 
+	case proplists:lookup(bind_address, Args) of
+		none ->
+			[{bind_address, localhost} | Args];
+		_ ->
+			Args;			
+	end,
+	Reply = 
+	case proplists:lookup(port, NewArgs) of
+		none ->
+			[{port, Port}, BindAddress];
+		_ ->
+			NewArgs
+	end,
+	{reply, Reply, {Port, Args, LSock}};
+handle_call(info, _From, State) -> {noreply, State}.
+
 handle_cast(_Req, State) -> {noreply, State}.
 
 %terminate(shutdown, State) removed, same body
