@@ -21,7 +21,8 @@
 -module(ftpd_util).
 
 -export([format_address/2, packet_to_tokens/1, check_repr_type/1,
-         check_auth/2, response/2, get_file_info/2,
+         response/2, send_reply/3, check_auth/2,
+         get_file_info/2, get_file_name/1, get_full_path/1,
          logf/3, tracef/3,
          list2portip/1, eprtlist2portip/1,
          bin_to_upper/1, binlist_to_string/1]).
@@ -34,7 +35,7 @@ format_address({A1, A2, A3, A4}, Port) ->
 	lists:concat([A1,",",A2,",",A3,",",A4,",",P1,",",P2]).
 
 bin_to_upper(T) ->
-	<< <<if (X =< 122)and(X >= 97) -> X-32; true -> X end>> || <<X:8>> <= T >>.
+	<< <<if (X =< 122)and(X >= $a) -> X-32; true -> X end>> || <<X:8>> <= T >>.
 
 binlist_to_string(List) ->
 	StrList = [ binary_to_list(E) || E <- List],
@@ -45,7 +46,7 @@ binlist_to_string(List) ->
 -spec packet_to_tokens(Data :: bitstring()) ->
 	{Command :: bitstring(), [Message :: bitstring()]}.
 packet_to_tokens(Data) ->
-	TrimmedData = re:replace(Data, "\r\n", "",[{return,list}]),
+	TrimmedData  = re:replace(Data, "\r\n", "",[{return,list}]),
 	SplittedData = re:split(TrimmedData, " "),
 	case SplittedData of
 		[Command | Msg] -> {bin_to_upper(Command), Msg};
@@ -53,14 +54,10 @@ packet_to_tokens(Data) ->
 	end.
 
 %% check for TYPE command arguments
-check_repr_type([Type]) ->
-	lists:member(Type, ["I"]);
-check_repr_type(["L", Arg]) ->
-	Arg == "8";
-check_repr_type([_, _]) ->
-	true;
-check_repr_type(_) ->
-	false.
+check_repr_type([Type])     -> lists:member(Type, ["I"]);
+check_repr_type(["L", Arg]) -> Arg == "8";
+check_repr_type([_, _])     -> true;
+check_repr_type(_)          -> false.
 
 %% Messages that require USER and PASS before
 req_auth_msgs() -> ["CWD", "PWD", "PASV"].
@@ -75,36 +72,50 @@ check_auth(Command, Args) ->
 -spec response(ReplyCode :: integer(), Message :: string()) -> reply().
 response(ReplyCode, Message) -> {reply, ReplyCode, Message}.
 
+%% Convert Code and Message to packet and send
+send_reply(Sock, Code, Message) ->
+	io:format("[~p-Send]: ~p - ~p\n", [self(), Code, Message]),
+	Str = integer_to_list(Code) ++ " " ++ Message ++ "\r\n",
+	gen_tcp:send(Sock, Str).
+
 %% Get file information
 %% drwxrwsr-x   3 47688    60000        4096 Dec-9-2005 empty
-get_file_info(FName,FullPath) ->
+get_file_info(FName, FullPath) ->
 	%% io:write(FullPath ++ FName),
-	{ok,{file_info,Size,Type,Access,
-	%%      {{2012,6,21},{17,20,49}},
-			   _AccTime, _ModTime,
-               {{CYr,CMn,CDa},{_CH,_CMin,_CSec}},
-               _Mode, Links,
-				_MajorDev, _MinorDev, _INode, UID, GID}} 
+	{ok, {file_info, Size, Type, Access,
+	_AccTime, _ModTime,
+	{{CYr,CMn,CDa}, {_CH,_CMin,_CSec}},			%% {{2012,6,21},{17,20,49}},
+    _Mode, Links,
+	_MajorDev, _MinorDev, _INode, UID, GID}} 
 		= file:read_file_info(FullPath ++ "/" ++ FName),
+
 	TypeLetter =
-		case Type of %% TODO: UNIX types needed
-			device -> v;
+		case Type of				%% TODO: UNIX types needed
+			device    -> v;
 			directory -> d;
-			other -> o;
-			regular -> '-';
-			symlink -> s;
-			_ -> u
+			other     -> o;
+			regular   -> '-';
+			symlink   -> s;
+			_         -> u
 		end,
 	AccLetter =
 		case Access of
-			read -> 'r--';
-			write -> '-w-';
+			read       -> 'r--';
+			write      -> '-w-';
 			read_write -> 'rw-';
-			_ -> '---'
+			_          -> '---'
 		end,
 	lists:concat([TypeLetter,AccLetter,AccLetter,AccLetter,
-	" ", Links, " ", UID, " ", GID, " ", Size, " ", httpd_util:month(CMn), " ",
-	CDa, " ", CYr, " ", FName]). %% CH, ":", CMin, " ", 
+	" ",Links," ",UID," ",GID," ",Size," ",
+	httpd_util:month(CMn)," ",CDa," ",CYr," ",FName]). %% CH, ":", CMin, " ", 
+
+get_full_path(Args) ->
+	AbsPath = Args#ctrl_conn_data.chrootdir,
+	RelPath = Args#ctrl_conn_data.curr_path,
+	AbsPath ++ RelPath.
+
+get_file_name(FullName) ->
+	filename:basename(FullName) ++ filename:extension(FullName).
 
 %% Log and trace functions
 logf(ConnData, Event, Params) ->

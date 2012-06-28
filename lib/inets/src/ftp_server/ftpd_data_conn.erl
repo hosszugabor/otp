@@ -21,8 +21,8 @@
 -module(ftpd_data_conn).
 
 -export([start_passive_mode/1, start_active_mode/3,
-         pasv_accept/1, actv_accept/1]).
--export([reinit_passive_conn/1, reinit_active_conn/1, send_msg/3]).
+         pasv_accept/1, actv_accept/1,
+         reinit_data_conn/1, send_msg/3]).
 
 -include_lib("inets/include/ftpd.hrl").
 -include_lib("ftpd_rep.hrl").
@@ -31,36 +31,31 @@
 %% Passive mode
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_active_mode(Ipv,Addr,Port) ->
-	io:format("PORT start\n"),
-	Opts =
-		case Ipv of
-			inet4 -> [binary, {packet, 0}, {active, false}];
-			inet6 -> [binary, {packet, 0}, {active, false}, inet6]
-		end,
-	case gen_tcp:connect(Addr, Port, Opts) of %% TODO error handling
+ipv_argl(inet4) -> [];
+ipv_argl(inet6) -> [inet6].
+
+start_active_mode(Ipv, Addr, Port) ->
+	io:format("Active mode begin, port: ~p\n", [Port]),
+	SockArgs = [binary, {packet, 0}, {active, false}] ++ ipv_argl(Ipv),
+	case gen_tcp:connect(Addr, Port, SockArgs) of %% TODO error handling
 		{ok, Sock} -> {ok, spawn_link(?MODULE, actv_accept, [Sock])};
-		Error -> Error
+		Error      -> Error
 	end.
 
 start_passive_mode(Ipv) ->
-	io:format("PASV start\n"), 
-	SockArgs =
-		case Ipv of
-			inet4 -> [binary, {packet, 0}, {active, false}];
-			inet6 -> [binary, {packet, 0}, {active, false}, inet6]
-		end,
+	io:format("Passive mode begin\n"),
+	SockArgs    = [binary, {packet, 0}, {active, false}] ++ ipv_argl(Ipv),
 	{ok, LSock} = gen_tcp:listen(0, SockArgs),
-	Pid = spawn_link(?MODULE, pasv_accept, [LSock]),
-	{Pid, inet:port(LSock)}.
+	Pid         = spawn_link(?MODULE, pasv_accept, [LSock]),
+	Port        = inet:port(LSock),
+	io:format("[~p]: Passive mode started, port: ~p\n", [Pid, Port]),
+	{Pid, Port}.
 
-reinit_passive_conn(none) ->
-	ok;
-reinit_passive_conn(LastPid) ->
-	exit(LastPid,shutdown).
-
-reinit_active_conn(LastPid) ->
-	reinit_passive_conn(LastPid).
+reinit_data_conn(Args) ->
+	case Args#ctrl_conn_data.data_pid of
+		none    -> ok;
+		LastPid -> exit(LastPid, shutdown)
+	end.
 
 send_msg(MsgType,Msg,State) ->
 	case State#ctrl_conn_data.data_pid of
@@ -73,24 +68,23 @@ send_msg(MsgType,Msg,State) ->
 
 actv_accept(DataSock) ->
 	io:format("ACTV accept start\n"), 
-	pasv_send_loop(DataSock).
+	data_conn_main(DataSock).
 
 pasv_accept(LSock) ->
 	io:format("PASV accept start\n"), 
 	case gen_tcp:accept(LSock) of
-		{ok, Sock} -> pasv_send_loop(Sock);
+		{ok, Sock} -> data_conn_main(Sock);
 		{_, _Res}  -> err_tcp
 	end.
 
-pasv_send_loop(DataSock) ->
+data_conn_main(DataSock) ->
 	io:format("PASV send loop\n"), 
     receive
-		{list, {FileNames, FullPath, ListType}, Args} ->
+		{list, {FileNames, Path, ListType}, Args} ->
 			io:format("PASV send LIST data\n"),
 			TempMsg =
 				case ListType of
-					lst  -> [ ?UTIL:get_file_info(FName,FullPath) ||
-														FName <- FileNames ];
+					lst  -> [ ?UTIL:get_file_info(FN,Path) || FN <- FileNames ];
 					nlst -> FileNames
 				end,
 			FormattedMsg = string:join(TempMsg, "\r\n"),
@@ -151,19 +145,13 @@ receive_and_write_chunks(DataSock,DevId) ->
 
 send_ctrl_response(Args, Command, Msg) ->
 	case Args#ctrl_conn_data.control_socket of
-		none     -> ok;
-		CtrlSock -> send_reply(CtrlSock, Command, Msg)
+		none     -> io:format("Error: no control socket"), ok;
+		CtrlSock -> ?UTIL:send_reply(CtrlSock, Command, Msg)
 	end.
 
 transfer_complete(Args) ->
 	case Args#ctrl_conn_data.control_socket of
 		none ->
 			io:format("Data connection failed to look up control connection\n");
-		ControlSock -> send_reply(ControlSock, 226, "Transfer complete")
+		ControlSock -> ?UTIL:send_reply(ControlSock, 226, "Transfer complete")
 	end.
-
-%% Convert Code and Message to packet and send
-send_reply(Sock, Code, Message) ->
-	io:format("[~p-Send]: ~p - ~p\n", [self(), Code, Message]),
-	Str = integer_to_list(Code) ++ " " ++ Message ++ "\r\n",
-	gen_tcp:send(Sock, Str).
