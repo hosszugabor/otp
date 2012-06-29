@@ -86,7 +86,7 @@ get_file_info(FName, FullPath) ->
 	_AccTime, _ModTime,
 	{{CYr,CMn,CDa}, {_CH,_CMin,_CSec}},			%% {{2012,6,21},{17,20,49}},
     _Mode, Links,
-	_MajorDev, _MinorDev, _INode, UID, GID}} 
+	_MajorDev, _MinorDev, _INode, UID, GID}}
 		= file:read_file_info(FullPath ++ "/" ++ FName),
 
 	TypeLetter =
@@ -107,7 +107,7 @@ get_file_info(FName, FullPath) ->
 		end,
 	lists:concat([TypeLetter,AccLetter,AccLetter,AccLetter,
 	" ",Links," ",UID," ",GID," ",Size," ",
-	httpd_util:month(CMn)," ",CDa," ",CYr," ",FName]). %% CH, ":", CMin, " ", 
+	httpd_util:month(CMn)," ",CDa," ",CYr," ",FName]). %% CH, ":", CMin, " ",
 
 get_full_path(Args) ->
 	AbsPath = Args#ctrl_conn_data.chrootdir,
@@ -127,14 +127,14 @@ tracef(ConnData, Event, Params) ->
 
 %% Conversion between string list and IP/Port tuple
 list2portip(Lst) when length(Lst) == 6 ->
-	Fun = fun(A) -> {Res,_} = string:to_integer(A), Res end,	
+	Fun = fun(A) -> {Res,_} = string:to_integer(A), Res end,
 	[A1,A2,A3,A4,P1,P2] = [ Fun(X) || X <- Lst ],
 	case lists:member(error,[A1,A2,A3,A4,P1,P2]) of
 		false ->
 			<<Port:16>> = <<P1:8, P2:8>>,
 			{{A1,A2,A3,A4},Port};
 		true ->
-			{error, bad_addr}				
+			{error, bad_addr}
 	end;
 list2portip(_) ->
 	{error, bad_addr}.

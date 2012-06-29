@@ -62,41 +62,40 @@ send_msg(MsgType,Msg,State) ->
 		none ->
 			{?RESP(500, "Data connection not established."), sameargs};
 		PasvPid ->
-			PasvPid ! {MsgType, Msg, State}, %% TODO response msg
+			PasvPid ! {MsgType, Msg, State},
 			{?RESP(150, "Opening ASCII mode data connection"), sameargs}
 	end.
 
 actv_accept(DataSock) ->
-	io:format("ACTV accept start\n"), 
+	io:format("ACTV accept start\n"),
 	data_conn_main(DataSock).
 
 pasv_accept(LSock) ->
-	io:format("PASV accept start\n"), 
+	io:format("PASV accept start\n"),
 	case gen_tcp:accept(LSock) of
 		{ok, Sock} -> data_conn_main(Sock);
-		{_, _Res}  -> err_tcp
+		_          -> err_tcp
 	end.
 
 data_conn_main(DataSock) ->
-	io:format("PASV send loop\n"), 
+	io:format("PASV send loop\n"),
     receive
 		{list, {FileNames, Path, ListType}, Args} ->
 			io:format("PASV send LIST data\n"),
 			TempMsg =
 				case ListType of
-					lst  -> [ ?UTIL:get_file_info(FN,Path) || FN <- FileNames ];
+					lst  -> [?UTIL:get_file_info(FN, Path) || FN <- FileNames];
 					nlst -> FileNames
 				end,
 			FormattedMsg = string:join(TempMsg, "\r\n"),
 			gen_tcp:send(DataSock, FormattedMsg),
 			transfer_complete(Args);
 		{retr, FileName, Args} ->
-			AbsPath = Args#ctrl_conn_data.chrootdir,
-			RelPath = Args#ctrl_conn_data.curr_path,
-			FPath   = AbsPath ++ "/" ++ RelPath ++ "/" ++ FileName,
+			FPath   = ?UTIL:get_full_path(Args) ++ "/" ++ FileName,
 			case file:read_file(FPath) of
 				{ok, Bin} ->
 					gen_tcp:send(DataSock, Bin),
+					RelPath     = Args#ctrl_conn_data.curr_path,
 					TraceParams = [RelPath ++ "/" ++ FileName, FileName],
 					?UTIL:tracef(Args, ?RETR, TraceParams), %% TODO 2nd param ??
 					transfer_complete(Args);
@@ -104,18 +103,16 @@ data_conn_main(DataSock) ->
 					RespStr = "Requested action not taken. File unavailable, "
                               "not found, not accessible",
 					send_ctrl_response(Args, 550, RespStr),
-					io:format("File error: ~p, ~p\n", [Reason, FPath])	
+					io:format("File error: ~p, ~p\n", [Reason, FPath])
 			end;
 		{stor, {FileName, FullClientName, Mode}, Args} ->
-			%% TODO duplicated code here and before, solution: make_filepath fun
-			AbsPath = Args#ctrl_conn_data.chrootdir,
-			RelPath = Args#ctrl_conn_data.curr_path,
-			FPath   = AbsPath ++ "/" ++ RelPath ++ "/" ++ FileName,
-			case receive_and_store(DataSock,FPath, Mode) of
+			FPath   = ?UTIL:get_full_path(Args) ++ "/" ++ FileName,
+			case receive_and_store(DataSock, FPath, Mode) of
 				ok ->
+					RelPath     = Args#ctrl_conn_data.curr_path,
 					TraceParams = [RelPath ++ "/" ++ FileName, FullClientName],
 					?UTIL:tracef(Args, ?STOR, TraceParams),
-					transfer_complete(Args); 
+					transfer_complete(Args);
 				{error, Reason} ->
 					RespStr = "Requested action not taken. File unavailable, "
                               "not found, not accessible",
@@ -125,20 +122,19 @@ data_conn_main(DataSock) ->
 	end,
 	gen_tcp:close(DataSock).
 
-
 %%	Receive binaries and store them in a file
-%%	
-receive_and_store(DataSock,FPath,Mode) ->
-	{ok, Id} = file:open(FPath,[Mode,binary]),
-	case {receive_and_write_chunks(DataSock,Id), file:close(Id)} of
+receive_and_store(DataSock, FPath, Mode) ->
+	{ok, Id} = file:open(FPath, [Mode, binary]),
+	case {receive_and_write_chunks(DataSock, Id), file:close(Id)} of
 		{ok, ok} -> ok;
 		_ 		 -> {error, receive_fail}
 	end.
 
-receive_and_write_chunks(DataSock,DevId) ->
+receive_and_write_chunks(DataSock, DevId) ->
     case gen_tcp:recv(DataSock, 0) of
-        {ok, Data} 		-> file:write(DevId,Data),
-						   receive_and_write_chunks(DataSock,DevId);
+        {ok, Data} ->
+			file:write(DevId, Data),
+			receive_and_write_chunks(DataSock, DevId);
         {error, closed} -> ok;
 		{error, Reason}	-> {error, Reason}
     end.

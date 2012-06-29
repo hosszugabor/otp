@@ -20,9 +20,7 @@
 
 -module(ftpd_ctrl_conn).
 
--export([new_connection/3]).
-
--include_lib("inets/src/inets_app/inets_internal.hrl").
+-export([new_connection/2]).
 
 -include_lib("inets/include/ftpd.hrl").
 -include_lib("ftpd_rep.hrl").
@@ -35,18 +33,23 @@
 %% Connect and process messages
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-new_connection(Sock, SupPid, Args) ->
+new_connection(Sock, Args) ->
+   	SupPid = proplists:get_value(sup_pid, Args),
 	erlang:monitor(process, SupPid),
+
 	io:format("---------------- CONNECTION START ----------------\n"),
 	?UTIL:send_reply(Sock, 220, "Hello"),
+
 	ConnData = construct_conn_data(Args, Sock),
 	do_recv(Sock, ConnData).
 
 construct_conn_data(Args, Sock) ->
-	ErlTop = element(2,file:get_cwd()),
+	ErlTop  = element(2, file:get_cwd()),
+	RootDir = proplists:get_value(chrootDir, Args, ErlTop),
+	BaseDir = re:replace(RootDir, "\/$", "", [{return, list}]), %% trim / at end
 	#ctrl_conn_data{
-		control_socket = Sock, 
-		chrootdir = proplists:get_value(chrootDir, Args, ErlTop),
+		control_socket = Sock,
+		chrootdir = BaseDir,
 		pwd_fun   = proplists:get_value(pwd_fun,   Args,
 						fun(_,_) -> not_authorized end),
 		log_fun   = proplists:get_value(log_fun,   Args, fun(_,_) -> ok end),
@@ -57,12 +60,12 @@ construct_conn_data(Args, Sock) ->
 -spec do_recv(Sock :: socket(), Args :: connstate()) -> ok.
 do_recv(Sock, Args) ->
     case gen_tcp:recv(Sock, 0) of
-        {ok, Data} ->
+		{ok, Data} ->
 			{Command, Msg} = ?UTIL:packet_to_tokens(Data),
 			io:format("[~p-Recv]: ~p - ~p\n", [self(), Command, Msg]),
 			NewArgs = process_message(Sock, Command, Msg, Args),
 			after_reply(Sock, Command, NewArgs);
-        {error, closed} -> ok
+		{error, closed} -> ok
     end.
 
 process_message(Sock, Command, Msg, Args) ->
@@ -83,8 +86,9 @@ process_message(Sock, Command, Msg, Args) ->
 %% Handle incoming FTP commands
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec handle_command(Command :: bitstring(), Message :: list(),
+-spec handle_command(Command :: bitstring(), Message :: [bitstring()],
 	Args :: connstate()) -> {reply(), argschange()}.
+
 handle_command(<<"NOOP">>, _, _) ->
 	mk_rep(200, "NOOP command successful");
 
@@ -93,10 +97,10 @@ handle_command(<<"QUIT">>, _, Args) ->
 	?UTIL:logf(Args, ?CONN_CLOSE, [User]),
 	mk_rep(221, "Goodbye.");
 
-handle_command(<<"USER">>, [UserBin|_], Args) ->
-	User = binary_to_list(UserBin),
+handle_command(<<"USER">>, ParamsBin, Args) ->
+	User = ?UTIL:binlist_to_string(ParamsBin),
 	case Args#ctrl_conn_data.authed of
-		true -> 
+		true  ->
 			mk_rep(503, "You are already logged in");
 		false ->
 			NewArgs = Args#ctrl_conn_data{ username = User },
@@ -158,20 +162,19 @@ handle_command(<<"APPE">>, ParamsBin, Args) ->
 	ftpd_data_conn:send_msg(stor, {FileName, FullName, append}, Args);
 
 handle_command(<<"CWD">>, ParamsBin, Args) ->
-	NewDir = ?UTIL:binlist_to_string(ParamsBin),
+	NewDir  = ?UTIL:binlist_to_string(ParamsBin),
 	CurDir  = Args#ctrl_conn_data.curr_path,
 	BaseDir = Args#ctrl_conn_data.chrootdir,
 	case ftpd_dir:set_cwd(BaseDir, CurDir, NewDir) of
-		{ok, ""} ->
-			NewPath = "/",
-			?UTIL:tracef(Args, ?CWD, [NewPath]),
-			io:format("CWD new path: ~p", [NewPath]),
-			NewArgs = Args#ctrl_conn_data{ curr_path = NewPath },
-			mk_rep(250, "CWD command successful.", NewArgs);
 		{ok, NewPath} ->
-			?UTIL:tracef(Args, ?CWD, [NewPath -- "/"]),
-			io:format("CWD new path: ~p", [NewPath]),
-			NewArgs = Args#ctrl_conn_data{ curr_path = NewPath },
+			NewPath2 =					%% TODO ??
+				case NewPath of
+					""      -> "/";
+					NewPath -> NewPath
+				end,
+			?UTIL:tracef(Args, ?CWD, [NewPath2]),
+			io:format("CWD new path: ~p", [NewPath2]),
+			NewArgs = Args#ctrl_conn_data{ curr_path = NewPath2 },
 			mk_rep(250, "CWD command successful.", NewArgs);
 		{error, Error} ->
 			io:format("CWD error: ~p", [Error]),
@@ -216,7 +219,7 @@ handle_command(<<"PORT">>, [BinArg1], Args) ->
 				{ok, PasvPid} ->
 					NewArgs = Args#ctrl_conn_data{ data_pid = PasvPid },
 					mk_rep(200, "PORT command successful", NewArgs);
-				{error, _} -> mk_rep(500, "PORT command failed (1)")					
+				{error, _} -> mk_rep(500, "PORT command failed (1)")
 			end
 	end;
 
@@ -242,7 +245,7 @@ handle_command(<<"EPRT">>, [BinArg1], Args) ->
 				{ok, PasvPid} ->
 					NewArgs = Args#ctrl_conn_data{ data_pid = PasvPid },
 					mk_rep(200, "EPRT command successful", NewArgs);
-				{error, _} -> mk_rep(500, "EPRT command failed (1)")					
+				{error, _} -> mk_rep(500, "EPRT command failed (1)")
 			end
 	end;
 
@@ -256,15 +259,12 @@ handle_command(<<"LIST">>, ParamsBin, Args) ->
 	case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
 		{ok, NewPath} ->
 			?UTIL:tracef(Args, ?LIST, [NewPath]),
-			FullPath        = AbsPath ++ "/" ++ RelPath ++ DirToList,
+			FullPath    = AbsPath ++ NewPath,
 			io:format("LIST path: ~p\n", [FullPath]),
-			{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-			MsgParam        = {lists:sort(FileNames), FullPath, lst},
-			ftpd_data_conn:send_msg(list, MsgParam, Args);
-		{error, Error} ->
-			io:format("LIST error: ~p  | ~p | ~p | ~p | ~p\n", 
-								[Error,ParamsBin,DirToList,AbsPath,RelPath]),
-			mk_rep(550, "LIST fail TEMP TODO")
+			{ok, Files} = file:list_dir(FullPath),
+			ftpd_data_conn:send_msg(list,{lists:sort(Files),FullPath,lst},Args);
+		{error, _} ->
+			mk_rep(450, DirToList ++ ": No such file or directory")
 	end;
 
 handle_command(<<"NLST">>, ParamsBin, Args) ->
@@ -274,11 +274,10 @@ handle_command(<<"NLST">>, ParamsBin, Args) ->
 	case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
 		{ok, NewPath} ->
 			io:format("NLST path ~p\n", [NewPath]),
-			{ok, FileNames} = file:list_dir(AbsPath ++ NewPath),
-			MsgParam        = {lists:sort(FileNames), "", nlst},
-			ftpd_data_conn:send_msg(list, MsgParam, Args);
-		{error, _Error} ->
-			mk_rep(550, "NLST fail TEMP TODO")			
+			{ok, Files} = file:list_dir(AbsPath ++ NewPath),
+			ftpd_data_conn:send_msg(list, {lists:sort(Files), "", nlst}, Args);
+		{error, _} ->
+			mk_rep(450, DirToList ++ ": No such file or directory")
 	end;
 
 
@@ -345,7 +344,6 @@ handle_command(Command, _, _) ->
 
 mk_rep(Code, Message) ->
 	{?RESP(Code, Message), sameargs}.
-
 mk_rep(Code, Message, NewArgs) ->
 	{?RESP(Code, Message), {newargs, NewArgs}}.
 

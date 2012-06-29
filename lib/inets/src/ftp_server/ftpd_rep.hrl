@@ -41,7 +41,7 @@
 						session_state	= none,
 
 						data_pid 		= none,
-						username 		= none, 
+						username 		= none,
 				  		authed 			= false,
 				  		curr_path 		= "/",
 				  		repr_type		= none,
@@ -52,6 +52,8 @@
 
 -define(UTIL, ftpd_util).
 -define(RESP(Comm, Msg), ?UTIL:response(Comm, Msg)).
+
+-define(DEFAULT_PORT, 21).
 
 %% Types
 

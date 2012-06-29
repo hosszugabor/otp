@@ -19,72 +19,61 @@
 %%
 
 -module(ftpd_listener).
-
 -behaviour(gen_server).
 
--export([start_link/1, loop/3, info/1]).
+-export([start_link/1, loop/2, info/1]).
 -export([init/1, handle_call/3, handle_cast/2,
          terminate/2, code_change/3, handle_info/2]).
 
-loop(LSock, SupPid, Args) ->
+-include_lib("ftpd_rep.hrl").
+
+loop(LSock, Args) ->
 	case gen_tcp:accept(LSock) of
 		{ok, Sock} ->
-			spawn_link(ftpd_ctrl_conn, new_connection, [Sock, SupPid, Args]),
-			loop(LSock, SupPid, Args);
+			spawn_link(ftpd_ctrl_conn, new_connection, [Sock, Args]),
+			loop(LSock, Args);
 		{_, _Res} ->
 			err_tcp
 	end.
 
 start_link(Args) ->
-	Str = lists:append("ftpd_listener_", integer_to_list(get_port(Args))),
-	Reg_name = list_to_atom(Str),
-	gen_server:start_link({local, Reg_name}, ?MODULE, Args, []).
+	Port    = proplists:get_value(port, Args, ?DEFAULT_PORT),
+	Str     = lists:append("ftpd_listener_", integer_to_list(Port)),
+	RegName = list_to_atom(Str),
+	gen_server:start_link({local, RegName}, ?MODULE, Args, []).
 
 init(Args) ->
 	process_flag(trap_exit, true),
-	Port = get_port(Args), 
-   	SupPid = proplists:get_value(sup_pid,Args),
 
-	SockArgs =
+	Port     = proplists:get_value(port, Args, ?DEFAULT_PORT),
+	BaseArgs = [binary, {packet, 0}, {active, false}],
+
+	Args1 = BaseArgs ++
 		case proplists:lookup(bind_address, Args) of
-			{bind_address, Addr={_,_,_,_,_,_,_,_}} ->
-				[binary, {packet, 0}, {active, false}, {ip, Addr}, inet6];
-			{bind_address, Addr} ->
-				[binary, {packet, 0}, {active, false}, {ip, Addr}];
-			none ->
-				[binary, {packet, 0}, {active, false}]
+			{bind_address, Addr={_,_,_,_,_,_,_,_}} -> [{ip, Addr}, inet6];
+			{bind_address, Addr}                   -> [{ip, Addr}];
+			none                                   -> []
 		end,
-	NewSockArgs =
+	Args2 = Args1 ++
 		case proplists:lookup(fd, Args) of
-			none -> SockArgs;
-			FdProp -> 
-				io:format("Fd connection"),
-				[FdProp | SockArgs]
-		end, 
+			none   -> [];
+			FdProp -> io:format("Fd connection"), [FdProp]
+		end,
 
-   	 {ok, LSock} =
-		gen_tcp:listen(Port, NewSockArgs),
-        %% TODO: Args also contains SupPid
-    	spawn(?MODULE, loop, [LSock, SupPid, Args]),
+	{ok, LSock} = gen_tcp:listen(Port, Args2),
+    spawn(?MODULE, loop, [LSock, Args]),
 	{ok, {Port, Args, LSock}}.
 
 info(Pid) ->
 	gen_server:call(Pid, info).
 
-get_port(Args) ->
-	case proplists:lookup(port,Args) of
-		{port, Pt} -> Pt;
-		none -> 21
-	end.
-
-
 handle_call(info, _From, {Port, Args, LSock}) ->
-	NewArgs = 
+	NewArgs =
 		case proplists:lookup(bind_address, Args) of
 			none -> [{bind_address, localhost} | Args];
 			_    -> Args
 		end,
-	Reply = 
+	Reply =
 		case proplists:lookup(port, NewArgs) of
 			none -> [{port, Port} | NewArgs];
 			_    -> NewArgs
@@ -96,7 +85,7 @@ handle_cast(_Req, State) -> {noreply, State}.
 
 %terminate(shutdown, State) removed, same body
 %terminate({shutdown, _Reason}, State)
-terminate(_Reason, State) -> 
+terminate(_Reason, State) ->
 	io:write("terminate: 3/n"),
 	LSock = element(3, State),
 	gen_tcp:close(LSock),
@@ -105,4 +94,5 @@ terminate(_Reason, State) ->
 handle_info(_Info, _State) ->
 	{stop, normal}.
 
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
+code_change(_OldVsn, State, _Extra) ->
+	{ok, State}.
