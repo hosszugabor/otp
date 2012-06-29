@@ -115,8 +115,6 @@ init_per_group(ipv6_tests, Config) ->
 
 init_per_group(_Group, Config) ->
     DataDir = ?config(data_dir, Config),
-	io:write(almalma),
-	io:write(DataDir),
     {ok, Pid} = inets:start(ftpd, [{port, 2021}, {pwd_fun, fun pwdfun/2}, {chrootDir, DataDir}]),
     [{ftpd_pid, Pid}, {ftp_server_address, "localhost"} | Config].
 
@@ -280,7 +278,6 @@ ls_test(Config) ->
 	[Dir, Empty, EmptyDir] = Lst,
     match = re:run(Dir, "^d.*\sdir$", [{capture, none}]),
     match = re:run(Empty, "^-.*\s\0\s+\S+\s+\S+\s+\S+\s+\d+:\d+\s+empty$", [{capture, none}]),
-	io:write(Empty),
     match = re:run(EmptyDir, "^d.*\sempty_dir$", [{capture, none}]).
 
 ls_dir_test(doc) ->

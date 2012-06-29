@@ -44,16 +44,14 @@ new_connection(Sock, Args) ->
 	do_recv(Sock, ConnData).
 
 construct_conn_data(Args, Sock) ->
-	ErlTop  = element(2, file:get_cwd()),
-	RootDir = proplists:get_value(chrootDir, Args, ErlTop),
+	RootDir = proplists:get_value(chrootDir, Args, ?DEFAULT_ROOT_DIR),
 	BaseDir = re:replace(RootDir, "\/$", "", [{return, list}]), %% trim / at end
 	#ctrl_conn_data{
 		control_socket = Sock,
 		chrootdir = BaseDir,
-		pwd_fun   = proplists:get_value(pwd_fun,   Args,
-						fun(_,_) -> not_authorized end),
-		log_fun   = proplists:get_value(log_fun,   Args, fun(_,_) -> ok end),
-		trace_fun = proplists:get_value(trace_fun, Args, fun(_,_) -> ok end)
+		pwd_fun   = proplists:get_value(pwd_fun,   Args, ?DEFAULT_PWD_FUN),
+		log_fun   = proplists:get_value(log_fun,   Args, ?DEFAULT_LOG_FUN),
+		trace_fun = proplists:get_value(trace_fun, Args, ?DEFAULT_LOG_FUN)
 	}.
 
 %% Control Connection - Wait for incoming messages
@@ -131,7 +129,7 @@ handle_command(<<"PASS">>, ParamsBin, Args) ->
 handle_command(<<"TYPE">>, ParamsBin, Args) ->
 	Params  = [ binary_to_list(E)  || E <- ParamsBin],	%% TEMP
 	ParamsF = [ string:to_upper(E) || E <- Params],
-	io:format("~p", [typeset]),
+	io:format("~p\n", [typeset]),
 	case ?UTIL:check_repr_type(ParamsF) of
 		true ->
 			NewArgs = Args#ctrl_conn_data{ repr_type = ParamsF },
@@ -174,11 +172,11 @@ handle_command(<<"CWD">>, ParamsBin, Args) ->
 					NewPath -> NewPath
 				end,
 			?UTIL:tracef(Args, ?CWD, [NewPath2]),
-			io:format("CWD new path: ~p", [NewPath2]),
+			io:format("CWD new path: ~p\n", [NewPath2]),
 			NewArgs = Args#ctrl_conn_data{ curr_path = NewPath2 },
 			mk_rep(250, "CWD command successful.", NewArgs);
 		{error, Error} ->
-			io:format("CWD error: ~p", [Error]),
+			io:format("CWD error: ~p\n", [Error]),
 			mk_rep(550, NewDir ++ ": No such file or directory")
 	end;
 
@@ -324,7 +322,7 @@ handle_command(<<"RNTO">>, ParamsBin, Args) ->
 		none ->
 			mk_rep(550, "RNTO command failed (1)");
 		FromPath ->
-			io:format("From: ~p || To: ~p", [FromPath, ToPath]),
+			io:format("Rename: From: ~p || To: ~p\n", [FromPath, ToPath]),
 			NewArgs = Args#ctrl_conn_data{ rename_from = none },
 			case file:rename(FromPath, ToPath) of
 				ok -> mk_rep(250, "RNTO ok", NewArgs);

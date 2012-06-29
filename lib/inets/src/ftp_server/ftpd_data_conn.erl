@@ -63,7 +63,7 @@ send_msg(MsgType, Msg, State) ->
 			{?RESP(500, "Data connection not established."), sameargs};
 		PasvPid ->
 			PasvPid ! {MsgType, Msg, State},
-			{?RESP(150, "Opening ASCII mode data connection"), sameargs}
+			{?RESP(150, "Opening BINARY mode data connection"), sameargs}
 	end.
 
 actv_accept(DataSock) ->
@@ -96,7 +96,7 @@ data_conn_main(DataSock) ->
 			FPath   = ftpd_dir:normalize_filepath(AbsPath,RelPath,FileName),
 			case file:read_file(FPath) of
 				{ok, Bin} ->
-					SendBin = transformto(Bin,Args#ctrl_conn_data.repr_type),
+					SendBin = ?UTIL:transformto(Bin,Args#ctrl_conn_data.repr_type),
 					gen_tcp:send(DataSock, SendBin),
 					TraceParams = [RelPath ++ "/" ++ FileName, FileName],
 					?UTIL:tracef(Args, ?RETR, TraceParams), %% TODO 2nd param ??
@@ -137,7 +137,7 @@ receive_and_store(DataSock, FPath, Mode, ReprType) ->
 receive_and_write_chunks(DataSock, DevId, ReprType) ->
     case gen_tcp:recv(DataSock, 0) of
         {ok, Data} ->
-			file:write(DevId,transformfrom(Data, ReprType)),
+			file:write(DevId, ?UTIL:transformfrom(Data, ReprType)),
 			receive_and_write_chunks(DataSock, DevId, ReprType);
         {error, closed} -> ok;
 		{error, Reason}	-> {error, Reason}
@@ -145,7 +145,7 @@ receive_and_write_chunks(DataSock, DevId, ReprType) ->
 
 send_ctrl_response(Args, Command, Msg) ->
 	case Args#ctrl_conn_data.control_socket of
-		none     -> io:format("Error: no control socket"), ok;
+		none     -> io:format("Error: no control socket\n"), ok;
 		CtrlSock -> ?UTIL:send_reply(CtrlSock, Command, Msg)
 	end.
 
@@ -155,12 +155,3 @@ transfer_complete(Args) ->
 			io:format("Data connection failed to look up control connection\n");
 		ControlSock -> ?UTIL:send_reply(ControlSock, 226, "Transfer complete")
 	end.
-
-transformfrom(Bin,"A") ->
-	Bin;
-transformfrom(Bin,_) ->
-	Bin.
-transformto(Bin,"A") ->
-	Bin; %% to ASCII
-transformto(Bin,_) ->
-	Bin.

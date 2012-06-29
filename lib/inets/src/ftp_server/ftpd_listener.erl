@@ -56,7 +56,7 @@ init(Args) ->
 	Args2 = Args1 ++
 		case proplists:lookup(fd, Args) of
 			none   -> [];
-			FdProp -> io:format("Fd connection"), [FdProp]
+			FdProp -> io:format("Fd connection\n"), [FdProp]
 		end,
 
 	{ok, LSock} = gen_tcp:listen(Port, Args2),
@@ -85,7 +85,7 @@ handle_cast(_Req, State) -> {noreply, State}.
 %terminate(shutdown, State) removed, same body
 %terminate({shutdown, _Reason}, State)
 terminate(_Reason, State) ->
-	io:write("terminate: 3/n"),
+	io:format("Listener terminated\n"),
 	LSock = element(3, State),
 	gen_tcp:close(LSock),
 	ok.

@@ -44,7 +44,7 @@
 						username 		= none,
 				  		authed 			= false,
 				  		curr_path 		= "/",
-				  		repr_type		= none,
+				  		repr_type		= ["I"],
 						rename_from		= none
 				  		}).
 
@@ -53,7 +53,10 @@
 -define(UTIL, ftpd_util).
 -define(RESP(Comm, Msg), ?UTIL:response(Comm, Msg)).
 
--define(DEFAULT_PORT, 21).
+-define(DEFAULT_PORT,     21).
+-define(DEFAULT_ROOT_DIR, element(2, file:get_cwd())).
+-define(DEFAULT_PWD_FUN,  fun(_,_) -> not_authorized end).
+-define(DEFAULT_LOG_FUN,  fun(_,_) -> ok end).
 
 %% Types
 

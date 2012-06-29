@@ -23,6 +23,7 @@
 -export([format_address/2, packet_to_tokens/1, check_repr_type/1,
          response/2, send_reply/3, check_auth/2,
          get_file_info/2, get_file_name/1, get_full_path/1,
+         transformfrom/2, transformto/2,
          logf/3, tracef/3,
          list2portip/1, eprtlist2portip/1, get_server_ip/0,
          bin_to_upper/1, binlist_to_string/1]).
@@ -81,7 +82,7 @@ send_reply(Sock, Code, Message) ->
 %% Get file information
 %% drwxrwsr-x   3 47688    60000        4096 Dec-9-2005 empty
 get_file_info(FName, FullPath) ->
-	%% io:write(FullPath ++ FName),
+	%% io:format(FullPath ++ FName ++ "\n"),
 	{ok, {file_info, Size, Type, Access,
 	_AccTime, _ModTime,
 	{{CYr,CMn,CDa}, {_CH,_CMin,_CSec}},			%% {{2012,6,21},{17,20,49}},
@@ -116,6 +117,18 @@ get_full_path(Args) ->
 
 get_file_name(FullName) ->
 	filename:basename(FullName) ++ filename:extension(FullName).
+
+%% CRLF transformation from ASCII to own representation
+transformfrom(Bin, _) ->
+	Bin.
+
+%% CRLF transformation from own representation to ASCII
+transformto(Bin, ["A"]) ->
+	io:format("Transforming Data to ASCII\n"),
+	Step1 = re:replace(Bin, "\r\n", "\n", [{return, binary}, global]),
+	re:replace(Step1, "\n", "\r\n", [{return, binary}, global]);
+transformto(Bin, _) ->
+	Bin.
 
 %% Log and trace functions
 logf(ConnData, Event, Params) ->
