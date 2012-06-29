@@ -17,6 +17,7 @@
 %% %CopyrightEnd%
 %%
 %%
+
 -module(ftpd).
 -behaviour(inets_service).
 
@@ -51,7 +52,6 @@ start_standalone(Config) ->
 start_service(Config) ->
 	ftpd_sup:start_child(Config). 
 
-
 -spec stop_service(Pid :: pid()) -> ok | {error, Reason :: term()}.
 stop_service(Pid) when is_pid(Pid) ->
 	ftpd_sup:stop_child(Pid);
@@ -61,10 +61,27 @@ stop_service(Pid) ->
 
 -spec services() -> [{ftpd, pid()}].
 services() ->
-    [].
+    [{ftpd, ChildPid} || {_, ChildPid, _, _} <- 
+			      supervisor:which_children(ftpd_sup)].
 
 -spec service_info(Pid :: pid()) -> 
     {ok, [{Property :: term(), Value :: term()}]} | {error, Reason :: term()}.
-service_info(_) ->
-    {error, not_implemented_yet}.
+service_info(Pid) ->
+     try
+	[ChildPid || 
+	    {_, ChildPid, _, _} <- 
+		supervisor:which_children(ftpd_sup)] of
+	Children ->
+	    get_child_info(Pid, Children)
+    catch
+	exit:{noproc, _} ->
+	    {error, service_not_available} 
+    end.
 
+get_child_info(Pid, Children) ->
+	case lists:member(Pid, Children) of 
+		true ->
+			{ok, ftpd_listener:info(Pid)};
+		false ->
+			{error, not_child_pid}
+	end.

@@ -1,9 +1,31 @@
+%%
+%% %CopyrightBegin%
+%%
+%% Copyright Ericsson AB 2012. All Rights Reserved.
+%%
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%%
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%%
+%% %CopyrightEnd%
+%%
+%%
+
 -module(ftpd_util).
 
 -export([format_address/2, packet_to_tokens/1, check_repr_type/1,
-         check_auth/2, response/2, get_file_info/2,
+         response/2, send_reply/3, check_auth/2,
+         get_file_info/2, get_file_name/1, get_full_path/1,
          logf/3, tracef/3,
-         list2portip/1, eprtlist2portip/1,bin_to_upper/1]).
+         list2portip/1, eprtlist2portip/1,
+         bin_to_upper/1, binlist_to_string/1]).
 
 -include_lib("ftpd_rep.hrl").
 
@@ -13,34 +35,34 @@ format_address({A1, A2, A3, A4}, Port) ->
 	lists:concat([A1,",",A2,",",A3,",",A4,",",P1,",",P2]).
 
 bin_to_upper(T) ->
-	<< <<if ((X =< 122) and (X >= 97)) -> X - 32; true -> X end>> || <<X:8>> <= T >>.
+	<< <<if (X=<$z)and(X>=$a) -> X-($a-$A); true -> X end>> || <<X:8>> <= T >>.
 
-%% Separate command from message and convert to upper case, eg. "user someone" -> {"USER", ["someone"]}
-%% OUTDATED -spec packet_to_tokens(Data :: string()) -> {Command :: string(), [Message :: string()]}.
+binlist_to_string(List) ->
+	StrList = [ binary_to_list(E) || E <- List],
+	string:join(StrList, " ").
+
+%% Separate command from message and convert to upper case
+%% eg. "user someone" -> {<<"USER">>, [<<"someone">>]}
+-spec packet_to_tokens(Data :: bitstring()) ->
+	{Command :: bitstring(), [Message :: bitstring()]}.
 packet_to_tokens(Data) ->
-	TrimmedData = re:replace(Data, "\r\n", "",[{return,list}]),
+	TrimmedData  = re:replace(Data, "\r\n", "",[{return,list}]),
 	SplittedData = re:split(TrimmedData, " "),
 	case SplittedData of
 		[Command | Msg] -> {bin_to_upper(Command), Msg};
 		_               -> io:format("Error: packet parse failed\n"), {"", []}
 	end.
-%% check for TYPE command arguments
 
-check_repr_type([Type]) ->
-	io:write(nnnn),
-	lists:member(Type, ["I","A"]);
-check_repr_type(["L", Arg]) ->
-	Arg == "8";
-%% check_repr_type([_, _]) ->
-%%	false;
-check_repr_type(_) ->
-	false.
+%% check for TYPE command arguments
+check_repr_type([Type])     -> lists:member(Type, ["I","A"]);
+check_repr_type(["L", Arg]) -> Arg == "8";
+check_repr_type(_)          -> false.
 
 %% Messages that require USER and PASS before
-req_auth_messages() -> ["CWD", "PWD", "PASV"].
+req_auth_msgs() -> ["CWD", "PWD", "PASV"].
 
 check_auth(Command, Args) ->
-	case {lists:member(Command, req_auth_messages()), Args#ctrl_conn_data.authed } of
+	case {lists:member(Command, req_auth_msgs()), Args#ctrl_conn_data.authed} of
 		{true, false} -> bad;
 		_             -> ok
 	end.
@@ -49,39 +71,52 @@ check_auth(Command, Args) ->
 -spec response(ReplyCode :: integer(), Message :: string()) -> reply().
 response(ReplyCode, Message) -> {reply, ReplyCode, Message}.
 
+%% Convert Code and Message to packet and send
+send_reply(Sock, Code, Message) ->
+	io:format("[~p-Send]: ~p - ~p\n", [self(), Code, Message]),
+	Str = integer_to_list(Code) ++ " " ++ Message ++ "\r\n",
+	gen_tcp:send(Sock, Str).
+
 %% Get file information
 %% drwxrwsr-x   3 47688    60000        4096 Dec-9-2005 empty
-
-get_file_info(FName,FullPath) ->
-%% io:write(FullPath ++ FName),
-{ok,{file_info,Size,Type,Access,
-%%               {{2012,6,21},{17,20,49}},
-			   AccTime,
-               ModTime,
-               {{CYr,CMn,CDa},{CH,CMin,CSec}},
-               Mode,Links,MajorDev,
-			MinorDev,INode,UID,GID}} 
+get_file_info(FName, FullPath) ->
+	%% io:write(FullPath ++ FName),
+	{ok, {file_info, Size, Type, Access,
+	_AccTime, _ModTime,
+	{{CYr,CMn,CDa}, {_CH,_CMin,_CSec}},			%% {{2012,6,21},{17,20,49}},
+    _Mode, Links,
+	_MajorDev, _MinorDev, _INode, UID, GID}} 
 		= file:read_file_info(FullPath ++ "/" ++ FName),
-	TypeLetter =
-	case Type of %% TODO: UNIX types needed
-		device -> v;
-		directory -> d;
-		other -> o;
-		regular -> '-';
-		symlink -> s;
-		_ -> u
-	end,
-	AccLetter =
-	case Access of
-		read -> 'r--';
-		write -> '-w-';
-		read_write -> 'rw-';
-		_ -> '---'
-	end,
-	lists:concat([TypeLetter,AccLetter,AccLetter,AccLetter,
-	" ", Links, " ", UID, " ", GID, " ", Size, " ", httpd_util:month(CMn), " ",
-	CDa, " ", CYr, " ", FName]). %% CH, ":", CMin, " ", 
 
+	TypeLetter =
+		case Type of				%% TODO: UNIX types needed
+			device    -> v;
+			directory -> d;
+			other     -> o;
+			regular   -> '-';
+			symlink   -> s;
+			_         -> u
+		end,
+	AccLetter =
+		case Access of
+			read       -> 'r--';
+			write      -> '-w-';
+			read_write -> 'rw-';
+			_          -> '---'
+		end,
+	lists:concat([TypeLetter,AccLetter,AccLetter,AccLetter,
+	" ",Links," ",UID," ",GID," ",Size," ",
+	httpd_util:month(CMn)," ",CDa," ",CYr," ",FName]). %% CH, ":", CMin, " ", 
+
+get_full_path(Args) ->
+	AbsPath = Args#ctrl_conn_data.chrootdir,
+	RelPath = Args#ctrl_conn_data.curr_path,
+	AbsPath ++ RelPath.
+
+get_file_name(FullName) ->
+	filename:basename(FullName) ++ filename:extension(FullName).
+
+%% Log and trace functions
 logf(ConnData, Event, Params) ->
 	LogFun = ConnData#ctrl_conn_data.log_fun,
 	LogFun(Event, Params).
@@ -89,11 +124,9 @@ tracef(ConnData, Event, Params) ->
 	TraceFun = ConnData#ctrl_conn_data.trace_fun,
 	TraceFun(Event, Params).
 
-
-%%
 %% Conversion between string list and IP/Port tuple
 list2portip(Lst) when length(Lst) == 6 ->
-	Fun = fun(A) -> {Res,More} = string:to_integer(A), Res end,	
+	Fun = fun(A) -> {Res,_} = string:to_integer(A), Res end,	
 	[A1,A2,A3,A4,P1,P2] = [ Fun(X) || X <- Lst ],
 	case lists:member(error,[A1,A2,A3,A4,P1,P2]) of
 		false ->
@@ -105,14 +138,11 @@ list2portip(Lst) when length(Lst) == 6 ->
 list2portip(_) ->
 	{error, bad_addr}.
 
-eprtlist2portip([Tp,SAddr,SPort]) when ((Tp == "1") or (Tp == "2")) ->
-	case {inet_parse:address(SAddr),string:to_integer(SPort)} of
-		{{ok,IP},{Port,[]}} -> {IP,Port};
-		Error				-> {error, bad_addr}
+eprtlist2portip([Tp, SAddr, SPort]) when ((Tp == "1") or (Tp == "2")) ->
+	case {inet_parse:address(SAddr), string:to_integer(SPort)} of
+		{{ok, IP}, {Port, []}} -> {IP, Port};
+		_Error                 -> {error, bad_addr}
 	end;
 
 eprtlist2portip(_) ->
-	{error, bad_addr}
-.
-
-
+	{error, bad_addr}.
