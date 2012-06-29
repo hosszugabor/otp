@@ -193,8 +193,7 @@ handle_command(<<"STRU">>, [Type], _) ->
 	end;
 
 handle_command(<<"PASV">>, _, Args) ->
-	{ok, Hostname} = inet:gethostname(),
-	case inet:getaddr(Hostname, inet) of
+	case ?UTIL:get_server_ip() of
 		{ok, Address} ->
 			ftpd_data_conn:reinit_data_conn(Args),
 			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet4),

@@ -24,10 +24,11 @@
          response/2, send_reply/3, check_auth/2,
          get_file_info/2, get_file_name/1, get_full_path/1,
          logf/3, tracef/3,
-         list2portip/1, eprtlist2portip/1,
+         list2portip/1, eprtlist2portip/1, get_server_ip/0,
          bin_to_upper/1, binlist_to_string/1]).
 
 -include_lib("ftpd_rep.hrl").
+-include_lib("kernel/include/inet.hrl").
 
 %% Converts ip and port to "h1,h2,h3,h4,p1,p2" format
 format_address({A1, A2, A3, A4}, Port) ->
@@ -146,3 +147,10 @@ eprtlist2portip([Tp, SAddr, SPort]) when ((Tp == "1") or (Tp == "2")) ->
 
 eprtlist2portip(_) ->
 	{error, bad_addr}.
+
+get_server_ip() ->
+	{ok, Name} = inet:gethostname(),
+	case inet_res:gethostbyname(Name) of
+		{ok, HostInfo} 	->	{ok, hd(HostInfo#hostent.h_addr_list)};
+		{error, _}		->  inet:getaddr(Name, inet)
+	end.
