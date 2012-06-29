@@ -131,7 +131,7 @@ handle_command(<<"PASS">>, ParamsBin, Args) ->
 handle_command(<<"TYPE">>, ParamsBin, Args) ->
 	Params  = [ binary_to_list(E)  || E <- ParamsBin],	%% TEMP
 	ParamsF = [ string:to_upper(E) || E <- Params],
-	io:write(typeset),
+	io:format("~p", [typeset]),
 	case ?UTIL:check_repr_type(ParamsF) of
 		true ->
 			NewArgs = Args#ctrl_conn_data{ repr_type = ParamsF },
