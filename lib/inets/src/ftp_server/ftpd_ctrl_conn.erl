@@ -131,6 +131,7 @@ handle_command(<<"PASS">>, ParamsBin, Args) ->
 handle_command(<<"TYPE">>, ParamsBin, Args) ->
 	Params  = [ binary_to_list(E)  || E <- ParamsBin],	%% TEMP
 	ParamsF = [ string:to_upper(E) || E <- Params],
+	io:write(typeset),
 	case ?UTIL:check_repr_type(ParamsF) of
 		true ->
 			NewArgs = Args#ctrl_conn_data{ repr_type = ParamsF },
@@ -195,8 +196,7 @@ handle_command(<<"STRU">>, [Type], _) ->
 	end;
 
 handle_command(<<"PASV">>, _, Args) ->
-	{ok, Hostname} = inet:gethostname(),
-	case inet:getaddr(Hostname, inet) of
+	case ?UTIL:get_server_ip() of
 		{ok, Address} ->
 			ftpd_data_conn:reinit_data_conn(Args),
 			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet4),

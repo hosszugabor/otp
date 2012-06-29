@@ -20,7 +20,13 @@
 
 -module(ftpd_dir).
 
--export([set_cwd/3]).
+-export([set_cwd/3, normalize_filepath/3]).
+
+normalize_filepath(Root, Cwd, ReqFile) ->
+	case hd(ReqFile) of
+		$/ -> Root ++ ReqFile;
+		_  -> Root ++ Cwd ++ "/" ++ ReqFile
+	end.
 
 set_cwd(Root, Cwd, Req) ->
 	case lists:prefix("./", Req)  of

@@ -30,10 +30,9 @@
 loop(LSock, Args) ->
 	case gen_tcp:accept(LSock) of
 		{ok, Sock} ->
-			spawn_link(ftpd_ctrl_conn, new_connection, [Sock, Args]),
+			spawn(ftpd_ctrl_conn, new_connection, [Sock, Args]),
 			loop(LSock, Args);
-		{_, _Res} ->
-			err_tcp
+		{_, _Res} -> err_tcp
 	end.
 
 start_link(Args) ->
