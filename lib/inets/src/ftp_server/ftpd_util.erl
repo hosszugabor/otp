@@ -25,12 +25,14 @@ packet_to_tokens(Data) ->
 		_               -> io:format("Error: packet parse failed\n"), {"", []}
 	end.
 %% check for TYPE command arguments
+
 check_repr_type([Type]) ->
-	lists:member(Type, ["I"]);
+	io:write(nnnn),
+	lists:member(Type, ["I","A"]);
 check_repr_type(["L", Arg]) ->
 	Arg == "8";
-check_repr_type([_, _]) ->
-	true;
+%% check_repr_type([_, _]) ->
+%%	false;
 check_repr_type(_) ->
 	false.
 

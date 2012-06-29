@@ -106,6 +106,7 @@ handle_command(<<"PASS">>, [PasswordBin|_], Args) ->
 handle_command(<<"TYPE">>, ParamsBin, Args) ->
 	Params  = [ binary_to_list(E)  || E <- ParamsBin],	%% TEMP
 	ParamsF = [ string:to_upper(E) || E <- Params],
+	io:write(typeset),
 	case ?UTIL:check_repr_type(ParamsF) of
 		true ->
 			NewArgs = Args#ctrl_conn_data{ repr_type = ParamsF },
@@ -187,7 +188,7 @@ handle_command(<<"PASV">>, _, Args) ->
 			{PasvPid, {ok, Port}} = ftpd_data_conn:start_passive_mode(inet4),
 			io:format("Passive mode start, port: ~p\n", [Port]),
 			NewArgs = Args#ctrl_conn_data{ data_pid = PasvPid },
-			{?RESP(227, "Entering Passive Mode (" ++ ?UTIL:format_address(Address, Port) ++ ")."), {newargs, NewArgs}};
+			{?RESP(227, "Entering Passive Mode (" ++ ?UTIL:format_address(Address, Port) ++ ")"), {newargs, NewArgs}};
 		{error, Error} ->
 			io:format("ERROR: inet:getaddr, ~p\n", [Error]),
 			{?RESP(500, "PASV command failed"), sameargs}

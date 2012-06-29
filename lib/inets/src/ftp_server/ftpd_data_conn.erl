@@ -23,20 +23,21 @@ start_active_mode(Ipv,Addr,Port) ->
 	end.
 
 start_passive_mode(Ipv) ->
-	io:format("PASV start\n"), 
+	io:format("PASV start 123\n"), 
 	SockArgs =
 		case Ipv of
 			inet4 -> [binary, {packet, 0}, {active, false}];
 			inet6 -> [binary, {packet, 0}, {active, false}, inet6]
 		end,
 	{ok, LSock} = gen_tcp:listen(0, SockArgs),
-	Pid = spawn_link(?MODULE, pasv_accept, [LSock]),
+	Pid = spawn(?MODULE, pasv_accept, [LSock]),
+	io:format("~p", [Pid]),
 	{Pid, inet:port(LSock)}.
 
 reinit_passive_conn(none) ->
-	ok;
+	true;
 reinit_passive_conn(LastPid) ->
-	exit(LastPid,shutdown).
+	exit(LastPid,kill).
 
 reinit_active_conn(LastPid) ->
 	reinit_passive_conn(LastPid).
