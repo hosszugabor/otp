@@ -37,7 +37,7 @@ new_connection(Sock, Args) ->
    	SupPid = proplists:get_value(sup_pid, Args),
 	erlang:monitor(process, SupPid),
 
-	io:format("---------------- CONNECTION START ----------------\n"),
+	?LOG("---------------- CONNECTION START ----------------\n"),
 	?UTIL:send_reply(Sock, 220, "Hello"),
 
 	ConnData = construct_conn_data(Args, Sock),
@@ -46,13 +46,19 @@ new_connection(Sock, Args) ->
 construct_conn_data(Args, Sock) ->
 	RootDir = proplists:get_value(chrootDir, Args, ?DEFAULT_ROOT_DIR),
 	BaseDir = re:replace(RootDir, "\/$", "", [{return, list}]), %% trim / at end
-	#ctrl_conn_data{
-		control_socket = Sock,
-		chrootdir = BaseDir,
-		pwd_fun   = proplists:get_value(pwd_fun,   Args, ?DEFAULT_PWD_FUN),
-		log_fun   = proplists:get_value(log_fun,   Args, ?DEFAULT_LOG_FUN),
-		trace_fun = proplists:get_value(trace_fun, Args, ?DEFAULT_LOG_FUN)
-	}.
+	Data    = #ctrl_conn_data{ control_socket = Sock, chrootdir = BaseDir },
+	lists:foldl(fun fold_args/2, Data, Args).
+
+fold_args({anonymous, Allow}, Data) ->
+	Data#ctrl_conn_data{ allow_anonymous = Allow };
+fold_args({pwd_fun, Fun}, Data) ->
+	Data#ctrl_conn_data{ pwd_fun = Fun };
+fold_args({log_fun, Fun}, Data) ->
+	Data#ctrl_conn_data{ log_fun = Fun };
+fold_args({trace_fun, Fun}, Data) ->
+	Data#ctrl_conn_data{ trace_fun = Fun };
+fold_args(_, Data) ->
+	Data.
 
 %% Control Connection - Wait for incoming messages
 -spec do_recv(Sock :: socket(), Args :: connstate()) -> ok.
@@ -60,7 +66,7 @@ do_recv(Sock, Args) ->
     case gen_tcp:recv(Sock, 0) of
 		{ok, Data} ->
 			{Command, Msg} = ?UTIL:packet_to_tokens(Data),
-			io:format("[~p-Recv]: ~p - ~p\n", [self(), Command, Msg]),
+			?LOG("[~p-Recv]: ~p - ~p\n", [self(), Command, Msg]),
 			NewArgs = process_message(Sock, Command, Msg, Args),
 			after_reply(Sock, Command, NewArgs);
 		{error, closed} -> ok
@@ -102,17 +108,25 @@ handle_command(<<"USER">>, ParamsBin, Args) ->
 			mk_rep(503, "You are already logged in");
 		false ->
 			NewArgs = Args#ctrl_conn_data{ username = User },
-			mk_rep(331, "Password required for " ++ User, NewArgs)
+			case ?is_anon(NewArgs) of
+				true  -> mk_rep(331, "Anonymous login ok, send your complete "
+									 "email address as your password", NewArgs);
+				false -> mk_rep(331, "Password required for " ++ User, NewArgs)
+			end
 	end;
 
 handle_command(<<"PASS">>, ParamsBin, Args) ->
 	Password = ?UTIL:binlist_to_string(ParamsBin),
 	Authed   = Args#ctrl_conn_data.authed,
 	User     = Args#ctrl_conn_data.username,
-	case {Authed, User} of
-		{true,  _}    -> mk_rep(503, "You are already logged in");
-		{false, none} -> mk_rep(503, "Login with USER first");
-		{false, _} ->
+	Anon     = ?is_anon(Args),
+	case {Authed, User, Anon} of
+		{true,  _,    _} -> mk_rep(503, "You are already logged in");
+		{false, none, _} -> mk_rep(503, "Login with USER first");
+		{false, _,    true} ->
+			NewArgs = Args#ctrl_conn_data{ authed = true },
+			mk_rep(230,"Anonymous access granted, restrictions apply",NewArgs);
+		{false, _, false} ->
 			PwdFun = Args#ctrl_conn_data.pwd_fun,
 			case PwdFun(User, Password) of
 				authorized ->
@@ -150,6 +164,9 @@ handle_command(<<"RETR">>, ParamsBin, Args) ->
 	FileName = ?UTIL:binlist_to_string(ParamsBin),
 	ftpd_data_conn:send_msg(retr, FileName, Args);
 
+handle_command(<<"STOR">>, _, Args) when ?is_anon(Args) ->
+	mk_rep(550, "Operation not permitted");
+
 handle_command(<<"STOR">>, ParamsBin, Args) ->
 	FullName = ?UTIL:binlist_to_string(ParamsBin),
 	FileName = ?UTIL:get_file_name(FullName),
@@ -172,11 +189,9 @@ handle_command(<<"CWD">>, ParamsBin, Args) ->
 					NewPath -> NewPath
 				end,
 			?UTIL:tracef(Args, ?CWD, [NewPath2]),
-			io:format("CWD new path: ~p\n", [NewPath2]),
 			NewArgs = Args#ctrl_conn_data{ curr_path = NewPath2 },
 			mk_rep(250, "CWD command successful.", NewArgs);
-		{error, Error} ->
-			io:format("CWD error: ~p\n", [Error]),
+		{error, _} ->
 			mk_rep(550, NewDir ++ ": No such file or directory")
 	end;
 
@@ -258,7 +273,6 @@ handle_command(<<"LIST">>, ParamsBin, Args) ->
 		{ok, NewPath} ->
 			?UTIL:tracef(Args, ?LIST, [NewPath]),
 			FullPath    = AbsPath ++ NewPath,
-			io:format("LIST path: ~p\n", [FullPath]),
 			{ok, Files} = file:list_dir(FullPath),
 			ftpd_data_conn:send_msg(list,{lists:sort(Files),FullPath,lst},Args);
 		{error, _} ->
@@ -271,7 +285,6 @@ handle_command(<<"NLST">>, ParamsBin, Args) ->
 	RelPath   = Args#ctrl_conn_data.curr_path,
 	case ftpd_dir:set_cwd(AbsPath, RelPath, DirToList) of
 		{ok, NewPath} ->
-			io:format("NLST path ~p\n", [NewPath]),
 			{ok, Files} = file:list_dir(AbsPath ++ NewPath),
 			ftpd_data_conn:send_msg(list, {lists:sort(Files), "", nlst}, Args);
 		{error, _} ->
@@ -283,15 +296,21 @@ handle_command(<<"REIN">>, [], Args) ->
 	NewArgs = Args#ctrl_conn_data{ authed = false, username = none },
 	mk_rep(200, "REIN command successful", NewArgs);
 
+handle_command(<<"MKD">>, _, Args) when ?is_anon(Args) ->
+	mk_rep(550, "Operation not permitted");
+
 handle_command(<<"MKD">>, ParamsBin, Args) ->
 	Dir      = ?UTIL:binlist_to_string(ParamsBin),
 	RelPath  = Args#ctrl_conn_data.curr_path ++ Dir,
-	FullPath = ?UTIL:get_full_path(Args),
+	FullPath = ?UTIL:get_full_path(Args) ++ Dir,
 	case file:make_dir(FullPath) of
 		ok              -> mk_rep(257, "\""++RelPath++"\" directory created");
 		{error, eexist} -> mk_rep(550, "Folder already exists");
 		{error, _}      -> mk_rep(550, "MKD command failed")
 	end;
+
+handle_command(<<"RMD">>, _, Args) when ?is_anon(Args) ->
+	mk_rep(550, "Operation not permitted");
 
 handle_command(<<"RMD">>, ParamsBin, Args) ->
 	Dir      = ?UTIL:binlist_to_string(ParamsBin),
@@ -301,6 +320,9 @@ handle_command(<<"RMD">>, ParamsBin, Args) ->
 		{error, _} -> mk_rep(550, "RMD command failed")
 	end;
 
+handle_command(<<"DELE">>, _, Args) when ?is_anon(Args) ->
+	mk_rep(550, "Operation not permitted");
+
 handle_command(<<"DELE">>, ParamsBin, Args) ->
 	Dir      = ?UTIL:binlist_to_string(ParamsBin),
 	FullPath = ?UTIL:get_full_path(Args) ++ Dir,
@@ -309,11 +331,17 @@ handle_command(<<"DELE">>, ParamsBin, Args) ->
 		{error, _} -> mk_rep(550, "DELE command failed")
 	end;
 
+handle_command(<<"RNFR">>, _, Args) when ?is_anon(Args) ->
+	mk_rep(550, "Operation not permitted");
+
 handle_command(<<"RNFR">>, ParamsBin, Args) ->
 	FromName = ?UTIL:binlist_to_string(ParamsBin),
 	FullPath = ?UTIL:get_full_path(Args) ++ FromName,
 	NewArgs  = Args#ctrl_conn_data{ rename_from = FullPath },
 	mk_rep(350, "Requested file action pending further information.", NewArgs);
+
+handle_command(<<"RNTO">>, _, Args) when ?is_anon(Args) ->
+	mk_rep(550, "Operation not permitted");
 
 handle_command(<<"RNTO">>, ParamsBin, Args) ->
 	ToName = ?UTIL:binlist_to_string(ParamsBin),
@@ -353,7 +381,7 @@ handle_reply(Sock, {reply, Code, Message}) ->
 
 %% Control behaviour after replying to a message
 after_reply(Sock, <<"QUIT">>, _) ->
-	io:format("---------------- CONNECTION CLOSE ----------------\n"),
+	?LOG("---------------- CONNECTION CLOSE ----------------\n"),
 	gen_tcp:close(Sock);
 after_reply(Sock, _, Args) ->
 	do_recv(Sock, Args).

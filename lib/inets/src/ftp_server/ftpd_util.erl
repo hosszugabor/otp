@@ -76,7 +76,7 @@ response(ReplyCode, Message) -> {reply, ReplyCode, Message}.
 
 %% Convert Code and Message to packet and send
 send_reply(Sock, Code, Message) ->
-	io:format("[~p-Send]: ~p - ~p\n", [self(), Code, Message]),
+	?LOG("[~p-Send]: ~p - ~p\n", [self(), Code, Message]),
 	Str = integer_to_list(Code) ++ " " ++ Message ++ "\r\n",
 	gen_tcp:send(Sock, Str).
 

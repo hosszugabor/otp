@@ -32,7 +32,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_active_mode(Ipv, Addr, Port) ->
-	io:format("Active mode begin, port: ~p\n", [Port]),
+	?LOG("Active mode begin, port: ~p\n", [Port]),
 	SockArgs = [binary, {packet, 0}, {active, false}] ++ ipv_argl(Ipv),
 	case gen_tcp:connect(Addr, Port, SockArgs) of %% TODO error handling
 		{ok, Sock} -> {ok, spawn(?MODULE, actv_accept, [Sock])};
@@ -40,12 +40,12 @@ start_active_mode(Ipv, Addr, Port) ->
 	end.
 
 start_passive_mode(Ipv) ->
-	io:format("Passive mode begin\n"),
+	?LOG("Passive mode begin\n"),
 	SockArgs    = [binary, {packet, 0}, {active, false}] ++ ipv_argl(Ipv),
 	{ok, LSock} = gen_tcp:listen(0, SockArgs),
 	Pid         = spawn(?MODULE, pasv_accept, [LSock]),
 	Port        = inet:port(LSock),
-	io:format("[~p]: Passive mode started, port: ~p\n", [Pid, Port]),
+	?LOG("[~p]: Passive mode started, port: ~p\n", [Pid, Port]),
 	{Pid, Port}.
 
 ipv_argl(inet4) -> [];
@@ -67,21 +67,21 @@ send_msg(MsgType, Msg, State) ->
 	end.
 
 actv_accept(DataSock) ->
-	io:format("ACTV accept start\n"),
+	?LOG("ACTV accept start\n"),
 	data_conn_main(DataSock).
 
 pasv_accept(LSock) ->
-	io:format("PASV accept start\n"),
+	?LOG("PASV accept start\n"),
 	case gen_tcp:accept(LSock) of
 		{ok, Sock} -> data_conn_main(Sock);
 		_          -> err_tcp
 	end.
 
 data_conn_main(DataSock) ->
-	io:format("PASV send loop\n"),
+	?LOG("PASV send loop\n"),
     receive
 		{list, {FileNames, Path, ListType}, Args} ->
-			io:format("PASV send LIST data\n"),
+			?LOG("PASV send LIST data\n"),
 			TempMsg =
 				case ListType of
 					lst  -> [?UTIL:get_file_info(FN, Path) || FN <- FileNames];
@@ -153,5 +153,6 @@ transfer_complete(Args) ->
 	case Args#ctrl_conn_data.control_socket of
 		none ->
 			io:format("Data connection failed to look up control connection\n");
-		ControlSock -> ?UTIL:send_reply(ControlSock, 226, "Transfer complete")
+		ControlSock ->
+			?UTIL:send_reply(ControlSock, 226, "Transfer complete")
 	end.
