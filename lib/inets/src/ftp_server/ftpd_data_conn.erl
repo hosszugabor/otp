@@ -79,7 +79,7 @@ pasv_accept(LSock) ->
 
 data_conn_main(DataSock) ->
 	?LOG("PASV send loop\n"),
-    receive
+	receive
 		{list, {FileNames, Path, ListType}, Args} ->
 			?LOG("PASV send LIST data\n"),
 			TempMsg =
@@ -103,7 +103,7 @@ data_conn_main(DataSock) ->
 					transfer_complete(Args);
 				{error, Reason} ->
 					RespStr = "Requested action not taken. File unavailable, "
-                              "not found, not accessible",
+					          "not found, not accessible",
 					send_ctrl_response(Args, 550, RespStr),
 					io:format("File error: ~p, ~p\n", [Reason, FPath])
 			end;
@@ -120,28 +120,29 @@ data_conn_main(DataSock) ->
 				{error, Reason} ->
 					io:format("File receive error: ~p\n", [Reason]),
 					RespStr = "Requested action not taken. File unavailable, "
-                              "not found, not accessible",
+					          "not found, not accessible",
 					send_ctrl_response(Args, 550, RespStr)
 			end
 	end,
+	?LOG("PASV send loop end\n"),
 	gen_tcp:close(DataSock).
 
-%%	Receive binaries and store them in a file
+%% Receive binaries and store them in a file
 receive_and_store(DataSock, FPath, Mode, ReprType) ->
 	{ok, Id} = file:open(FPath, [Mode, binary]),
 	case {receive_and_write_chunks(DataSock, Id, ReprType), file:close(Id)} of
 		{ok, ok} -> ok;
-		_ 		 -> {error, receive_fail}
+		_        -> {error, receive_fail}
 	end.
 
 receive_and_write_chunks(DataSock, DevId, ReprType) ->
-    case gen_tcp:recv(DataSock, 0) of
-        {ok, Data} ->
+	case gen_tcp:recv(DataSock, 0) of
+		{ok, Data} ->
 			file:write(DevId, ?UTIL:transformfrom(Data, ReprType)),
 			receive_and_write_chunks(DataSock, DevId, ReprType);
-        {error, closed} -> ok;
-		{error, Reason}	-> {error, Reason}
-    end.
+		{error, closed} -> ok;
+		{error, Reason} -> {error, Reason}
+	end.
 
 send_ctrl_response(Args, Command, Msg) ->
 	case Args#ctrl_conn_data.control_socket of

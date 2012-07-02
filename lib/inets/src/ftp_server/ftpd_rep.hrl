@@ -50,30 +50,31 @@
                        (Args#ctrl_conn_data.allow_anonymous)).
 
 %% Control connection data
-%%	username     ~ actual username set by the user (using USER <loginname>)
-%%	authed       ~ indicates whether a proper password
+%%  username     ~ actual username set by the user (using USER <loginname>)
+%%  authed       ~ indicates whether a proper password
 %%                 was given for the actual username
-%%	control_sock ~ socket of the control connection
-%%	pasv_pid     ~ PID of the passive connection used by this control connection
-%%		           (if exists)
-%%	curr_path    ~ current directory path
+%%  control_sock ~ socket of the control connection
+%%  pasv_pid     ~ PID of the passive connection used by this control connection
+%%                 (if exists)
+%%  curr_path    ~ current directory path
+
 -record(ctrl_conn_data, {
 						chrootdir		= none,
-						pwd_fun		    = ?DEFAULT_PWD_FUN,
-						log_fun		    = ?DEFAULT_LOG_FUN,
-						trace_fun	    = ?DEFAULT_LOG_FUN,
-						allow_anonymous = false,
+						pwd_fun			= ?DEFAULT_PWD_FUN,
+						log_fun			= ?DEFAULT_LOG_FUN,
+						trace_fun		= ?DEFAULT_LOG_FUN,
+						allow_anonymous	= false,
 
-						session_state   = none,
-						control_socket  = none,
+						session_state	= none,
+						control_socket	= none,
 
-						data_pid 	    = none,
-						username 	    = none,
-				  		authed 		    = false,
-				  		curr_path 	    = "/",
-				  		repr_type	    = ["I"],
-						rename_from	    = none
-				  		}).
+						data_pid		= none,
+						username		= none,
+						authed			= false,
+						curr_path		= "/",
+						repr_type		= ["I"],
+						rename_from		= none
+						}).
 
 %% Types
 
@@ -91,5 +92,3 @@
 -type connstate()  :: [connitem()].
 
 -endif.
-
-

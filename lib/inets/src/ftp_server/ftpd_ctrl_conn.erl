@@ -34,7 +34,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 new_connection(Sock, Args) ->
-   	SupPid = proplists:get_value(sup_pid, Args),
+	SupPid = proplists:get_value(sup_pid, Args),
 	erlang:monitor(process, SupPid),
 
 	?LOG("---------------- CONNECTION START ----------------\n"),
@@ -63,14 +63,14 @@ fold_args(_, Data) ->
 %% Control Connection - Wait for incoming messages
 -spec do_recv(Sock :: socket(), Args :: connstate()) -> ok.
 do_recv(Sock, Args) ->
-    case gen_tcp:recv(Sock, 0) of
+	case gen_tcp:recv(Sock, 0) of
 		{ok, Data} ->
 			{Command, Msg} = ?UTIL:packet_to_tokens(Data),
 			?LOG("[~p-Recv]: ~p - ~p\n", [self(), Command, Msg]),
 			NewArgs = process_message(Sock, Command, Msg, Args),
 			after_reply(Sock, Command, NewArgs);
 		{error, closed} -> ok
-    end.
+	end.
 
 process_message(Sock, Command, Msg, Args) ->
 	case ?UTIL:check_auth(Command, Args) of
@@ -110,7 +110,7 @@ handle_command(<<"USER">>, ParamsBin, Args) ->
 			NewArgs = Args#ctrl_conn_data{ username = User },
 			case ?is_anon(NewArgs) of
 				true  -> mk_rep(331, "Anonymous login ok, send your complete "
-									 "email address as your password", NewArgs);
+				                     "email address as your password", NewArgs);
 				false -> mk_rep(331, "Password required for " ++ User, NewArgs)
 			end
 	end;
@@ -141,7 +141,7 @@ handle_command(<<"PASS">>, ParamsBin, Args) ->
 	end;
 
 handle_command(<<"TYPE">>, ParamsBin, Args) ->
-	Params  = [ binary_to_list(E)  || E <- ParamsBin],	%% TEMP
+	Params  = [ binary_to_list(E)  || E <- ParamsBin],
 	ParamsF = [ string:to_upper(E) || E <- Params],
 	io:format("~p\n", [typeset]),
 	case ?UTIL:check_repr_type(ParamsF) of
@@ -183,7 +183,7 @@ handle_command(<<"CWD">>, ParamsBin, Args) ->
 	BaseDir = Args#ctrl_conn_data.chrootdir,
 	case ftpd_dir:set_cwd(BaseDir, CurDir, NewDir) of
 		{ok, NewPath} ->
-			NewPath2 =					%% TODO ??
+			NewPath2 =                 %% TODO ??
 				case NewPath of
 					""      -> "/";
 					NewPath -> NewPath
@@ -205,7 +205,7 @@ handle_command(<<"PWD">>, _, _) ->	% TODO: generalize
 handle_command(<<"STRU">>, [Type], _) ->
 	case ?UTIL:bin_to_upper(Type) of
 		<<"F">> -> mk_rep(200, "Structure set to F");
-		_		-> mk_rep(504, "Unsupported structure type")
+		_       -> mk_rep(504, "Unsupported structure type")
 	end;
 
 handle_command(<<"PASV">>, _, Args) ->
@@ -304,7 +304,7 @@ handle_command(<<"MKD">>, ParamsBin, Args) ->
 	RelPath  = Args#ctrl_conn_data.curr_path ++ Dir,
 	FullPath = ?UTIL:get_full_path(Args) ++ Dir,
 	case file:make_dir(FullPath) of
-		ok              -> mk_rep(257, "\""++RelPath++"\" directory created");
+		ok              -> mk_rep(257, "\"" ++RelPath++ "\" directory created");
 		{error, eexist} -> mk_rep(550, "Folder already exists");
 		{error, _}      -> mk_rep(550, "MKD command failed")
 	end;

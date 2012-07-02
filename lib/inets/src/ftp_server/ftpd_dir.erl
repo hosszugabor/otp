@@ -29,7 +29,7 @@ normalize_filepath(Root, Cwd, ReqFile) ->
 	end.
 
 set_cwd(Root, Cwd, Req) ->
-	case lists:prefix("./", Req)  of
+	case lists:prefix("./", Req) of
 		true ->
 			NewReq = slash_correct(dot_correct(lists:nthtail(1, Req))),
 			cwd_fun(Root, Cwd, NewReq);
@@ -86,7 +86,7 @@ cwd_fun(Root, CwdAbsName, Req) ->
 step_forward(Root, CwdAbsName, 0, Req) ->
 	NewAbsName = string:join([CwdAbsName, Req], ""),
 	case filelib:is_dir(string:join([Root, NewAbsName], "")) of
-		true -> {ok, {NewAbsName, ""}};
+		true  -> {ok, {NewAbsName, ""}};
 		false -> {error, invalid_dir}
 	end;
 
