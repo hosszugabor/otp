@@ -60,13 +60,14 @@ check_repr_type([Type])     -> lists:member(Type, ["I","A"]);
 check_repr_type(["L", Arg]) -> Arg == "8";
 check_repr_type(_)          -> false.
 
-%% Messages that require USER and PASS before
-req_auth_msgs() -> ["CWD", "PWD", "PASV"].
+%% Messages that does not require USER and PASS before
+no_auth_msgs() -> [<<"USER">>, <<"PASS">>, <<"QUIT">>, <<"NOOP">>, <<"ACCT">>,
+                   <<"TYPE">>, <<"FEAT">>].
 
 check_auth(Command, Args) ->
-	case {lists:member(Command, req_auth_msgs()), Args#ctrl_conn_data.authed} of
-		{true, false} -> bad;
-		_             -> ok
+	case {lists:member(Command, no_auth_msgs()), Args#ctrl_conn_data.authed} of
+		{false, false} -> bad;
+		_              -> ok
 	end.
 
 %% Construct tuple for response

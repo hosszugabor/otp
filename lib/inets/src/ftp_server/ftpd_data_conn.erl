@@ -96,8 +96,8 @@ data_conn_main(DataSock) ->
 			FPath   = ftpd_dir:normalize_filepath(AbsPath,RelPath,FileName),
 			case file:read_file(FPath) of
 				{ok, Bin} ->
-					SendBin = ?UTIL:transformto(Bin,Args#ctrl_conn_data.repr_type),
-					gen_tcp:send(DataSock, SendBin),
+					BinT = ?UTIL:transformto(Bin,Args#ctrl_conn_data.repr_type),
+					gen_tcp:send(DataSock, BinT),
 					TraceParams = [RelPath ++ "/" ++ FileName, FileName],
 					?UTIL:tracef(Args, ?RETR, TraceParams), %% TODO 2nd param ??
 					transfer_complete(Args);
@@ -111,17 +111,17 @@ data_conn_main(DataSock) ->
 			AbsPath = Args#ctrl_conn_data.chrootdir,
 			RelPath = Args#ctrl_conn_data.curr_path,
 			FPath   = ftpd_dir:normalize_filepath(AbsPath,RelPath,FileName),
-			case receive_and_store(DataSock,FPath, Mode, Args#ctrl_conn_data.repr_type) of
+			Repr    = Args#ctrl_conn_data.repr_type,
+			case receive_and_store(DataSock, FPath, Mode, Repr) of
 				ok ->
-					RelPath     = Args#ctrl_conn_data.curr_path,
 					TraceParams = [RelPath ++ "/" ++ FileName, FullClientName],
 					?UTIL:tracef(Args, ?STOR, TraceParams),
 					transfer_complete(Args);
 				{error, Reason} ->
+					io:format("File receive error: ~p\n", [Reason]),
 					RespStr = "Requested action not taken. File unavailable, "
                               "not found, not accessible",
-					send_ctrl_response(Args, 550, RespStr),
-					io:format("File receive error: ~p\n",[Reason])
+					send_ctrl_response(Args, 550, RespStr)
 			end
 	end,
 	gen_tcp:close(DataSock).
